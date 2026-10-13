@@ -42,6 +42,11 @@
   .tab:hover:not(.active) { color: var(--txt); border-color: var(--dim); }
   .pane { display: none; }
   .pane.active { display: block; animation: in .2s ease; }
+  #chat-bg {
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background-size: cover; background-position: top center;
+    opacity: .14; filter: saturate(.8) blur(1px);
+  }
   @keyframes in { from { opacity: 0; transform: translateY(4px); } }
 
   form { display: grid; gap: 16px; margin-bottom: 28px; }
@@ -234,6 +239,7 @@
 
   <!-- ================= CHATBOT ================= -->
   <section class="pane" id="pane-chat">
+    <div id="chat-bg"></div>
     <div style="margin-bottom:12px;max-width:420px">
       <label for="c-site">Chatting as concierge for</label>
       <select id="c-site"></select>
@@ -447,6 +453,7 @@ async function loadSites() {
     if (sites.some(s => s.url === prev)) el.value = prev;
   }
   try { $("w-host").textContent = "· " + new URL($("c-site").value).hostname; } catch {}
+  chatBg();
   const aSel = $("a-site"), aPrev = aSel.value;
   aSel.innerHTML = `<option value="">All sites</option>` +
     sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
@@ -503,7 +510,14 @@ $("w-clear").onclick = () => {
 };
 $("c-site").onchange = () => {
   try { $("w-host").textContent = "· " + new URL($("c-site").value).hostname; } catch {}
+  chatBg();
 };
+
+function chatBg() {
+  const u = $("c-site").value;
+  $("chat-bg").style.backgroundImage =
+    u ? `url("/sites/screenshot?url=${encodeURIComponent(u)}")` : "none";
+}
 
 const chat = $("chat");
 function bubble(cls, html) {

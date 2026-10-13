@@ -83,6 +83,14 @@ test("index workflow crawls and stores a corpus", async () => {
     sites: { url: string; chunk_count: number }[];
   };
   expect(sites.sites.some((s) => s.url === SITE)).toBe(true);
+
+  // Homepage screenshot captured during crawl and stored with the corpus.
+  const shot = await ctx.get(
+    `${CHATBOT_CONCIERGE}/sites/screenshot?url=${encodeURIComponent(SITE)}`
+  );
+  expect(shot.status()).toBe(200);
+  const magic = await shot.body();
+  expect([...magic.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
 });
 
 test("query workflow answers from the stored corpus", async () => {

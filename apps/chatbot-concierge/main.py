@@ -39,6 +39,7 @@ from pydantic import BaseModel, HttpUrl
 
 OLLAMA = os.environ["OLLAMA_BASE_URL"].rstrip("/")
 FIRECRAWL = os.environ["FIRECRAWL_URL"].rstrip("/")
+SCREENSHOT = os.environ.get("SCREENSHOT_URL", "").rstrip("/")
 CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("CHATBOT_CONCIERGE_DB_PATH", "/data/langgraph.db")
@@ -70,6 +71,7 @@ class ChatbotConciergeState(TypedDict, total=False):
     email: str | None                    # operator-provided contact email
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
+    screenshot: bytes | None             # homepage PNG captured during crawl
     ranked: list[dict[str, Any]]
     candidate: str | None               # unverified answer draft
     cand_text: str                      # chunk text the candidate drew from
@@ -166,11 +168,25 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             raise RuntimeError("crawl returned no usable pages")
         return {
             "pages": pages,
+            "screenshot": await _shot(http, state["url"]),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
                            pages=len(pages), job=job_id)],
         }
     except Exception as e:
         return fail(state, "crawl", e)
+
+
+async def _shot(http: httpx.AsyncClient, url: str) -> bytes | None:
+    """Screenshot the homepage via the screenshotter service — cosmetic, never fatal."""
+    if not SCREENSHOT:
+        return None
+    try:
+        r = await http.post(f"{SCREENSHOT}/screenshot", json={"url": url}, timeout=60)
+        if r.status_code == 200 and r.content[:4] == b"\x89PNG":
+            return r.content
+    except Exception:
+        pass
+    return None
 
 
 _IMAGE_LINE = re.compile(r"^\s*!\[.*\]\(.*?\)\s*\\?\s*$")
@@ -271,13 +287,15 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
         return {}
     url = _canon(state["url"])
     await _db.execute(
-        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email, indexed_at)
-           VALUES(?,?,?,?,?,?,?,?)
+        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
+                              screenshot, indexed_at)
+           VALUES(?,?,?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
              embeddings=excluded.embeddings,
              phone=excluded.phone,
              email=excluded.email,
+             screenshot=excluded.screenshot,
              indexed_at=excluded.indexed_at""",
         (
             url,
@@ -287,6 +305,7 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
             json.dumps(state["embeddings"]),
             state.get("phone"),
             state.get("email"),
+            state.get("screenshot"),
             time.time(),
         ),
     )
@@ -638,9 +657,9 @@ async def lifespan(app: FastAPI):
     # Older databases: add any columns introduced after first boot.
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
-    for col in ("phone", "email"):
+    for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB"}.items():
         if col not in cols:
-            await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} TEXT")
+            await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
 
     _index_graph = _build(
@@ -779,6 +798,22 @@ async def delete_site(url: str) -> dict[str, Any]:
         evts = cur.rowcount
     await _db.commit()
     return {"deleted": corpus > 0, "events_deleted": evts}
+
+
+@app.get("/sites/screenshot")
+async def site_screenshot(url: str) -> Response:
+    """Homepage PNG captured during indexing — 404 until the site is (re-)indexed."""
+    async with _db.execute(
+        "SELECT screenshot FROM corpora WHERE url=?", (_canon(url),)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "no screenshot for this site")
+    return Response(
+        bytes(row[0]),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/audit")
