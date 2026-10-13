@@ -74,11 +74,14 @@ services:
     restart: "no"
 
   # ------------------------------------------------------------- playwright
-  # Shared Chromium browser server for dev/demos. Clients connect via
-  # playwright's remote protocol:
+  # OPTIONAL: shared Chromium browser server for your own scripts/tests —
   #   chromium.connect("ws://localhost:3100/browser")
+  # NOT needed for scraping: firecrawl has its own internal playwright
+  # service. Start it on demand with:
+  #   docker compose --profile browser up -d
   playwright:
     image: mcr.microsoft.com/playwright:v1.64.0-noble
+    profiles: ["browser", "test"]
     command: npx playwright launch-server --browser chromium --config /etc/playwright/server.json
     volumes:
       - ./infra/playwright-server.json:/etc/playwright/server.json:ro

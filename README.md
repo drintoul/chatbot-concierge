@@ -25,8 +25,19 @@ First boot pulls images (~5 GB) and then the ollama models
 | Service    | Local URL                          | Notes                          |
 | ---------- | ---------------------------------- | ------------------------------ |
 | Ollama     | `http://localhost:11435`           | OpenAI-compat at `/v1`         |
-| Playwright | `ws://localhost:3100/browser`      | `chromium.connect(...)`        |
 | Firecrawl  | `http://localhost:3002`            | `POST /v2/scrape`, `/v2/crawl` |
+| Playwright | `ws://localhost:3100/browser`      | *opt-in*, see below            |
+
+> **Do I need the standalone `playwright` service?** Not for scraping —
+> Firecrawl bundles its own internal render service (`firecrawl-playwright`)
+> and uses it automatically. The standalone service only matters if you want
+> to drive a browser from *your own* code (`chromium.connect`) for things
+> Firecrawl can't do: custom automation, screenshots, logged-in flows. It's
+> opt-in so it doesn't eat ~2 GB of RAM on every `up`:
+>
+> ```bash
+> docker compose --profile browser up -d playwright
+> ```
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
 > This project's container publishes on **11435** so the two never conflict.
@@ -55,9 +66,9 @@ docker compose --profile test run --rm e2e
 ## Architecture
 
 ```
-┌─────────────┐   ws://playwright:3000/browser
+┌─────────────┐   ws://playwright:3000/browser   (opt-in `browser` profile)
 │ playwright  │ ◄────── your scripts/tests connect here
-│ (mcr image, │        (chromium.connect)
+│ (mcr image, │        (chromium.connect) — not needed for scraping
 │  chromium)  │
 └─────────────┘
 ┌─────────────┐
@@ -79,9 +90,10 @@ docker compose --profile test run --rm e2e
 └──────────────────┘
 ```
 
-Two "playwright" things exist on purpose: `playwright` is a generic
-browser-server endpoint for your own tooling; `firecrawl-playwright` is
-Firecrawl's internal render backend and is not published to the host.
+Two "playwright" things exist: `playwright` (opt-in `browser`/`test`
+profile) is a generic browser-server endpoint for your own tooling;
+`firecrawl-playwright` is Firecrawl's internal render backend — required
+for JS-rendered scraping, runs always, and is not published to the host.
 
 ## Usage snippets
 
