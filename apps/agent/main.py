@@ -598,6 +598,12 @@ async def lifespan(app: FastAPI):
              chunks TEXT, embeddings TEXT, phone TEXT, email TEXT,
              indexed_at REAL)"""
     )
+    await _db.execute(
+        """CREATE TABLE IF NOT EXISTS events(
+             id INTEGER PRIMARY KEY AUTOINCREMENT,
+             ts REAL, run_id TEXT, url TEXT, question TEXT, answer TEXT,
+             grounded INTEGER, sources TEXT, latency_ms INTEGER, error TEXT)"""
+    )
     await _db.commit()
     # Older databases: add any columns introduced after first boot.
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
@@ -635,6 +641,32 @@ class QueryRequest(BaseModel):
     question: str
 
 
+async def _audit(graph, run_id: str, cfg: dict[str, Any]) -> None:
+    """Persist each finished query run — question, response, latency.
+    Never raises: auditing must not break a run."""
+    if not run_id.startswith("qry:"):
+        return
+    try:
+        snap = await graph.aget_state(cfg)
+        v = (snap.values if snap else {}) or {}
+        steps = v.get("steps") or []
+        latency = round((steps[-1]["at"] - steps[0]["at"]) * 1000) if len(steps) >= 2 else None
+        await _db.execute(
+            "INSERT INTO events(ts, run_id, url, question, answer, grounded,"
+            " sources, latency_ms, error) VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                time.time(), run_id, v.get("url"), v.get("question"),
+                v.get("answer"),
+                (1 if v.get("grounded") else 0) if v.get("status") == "done" else None,
+                json.dumps(v.get("sources") or []),
+                latency, v.get("error"),
+            ),
+        )
+        await _db.commit()
+    except Exception:
+        pass
+
+
 async def _run(graph, run_id: str, initial: AgentState) -> None:
     cfg = {"configurable": {"thread_id": run_id}}
     try:
@@ -649,6 +681,7 @@ async def _run(graph, run_id: str, initial: AgentState) -> None:
             pass
     finally:
         _pending.discard(run_id)
+        await _audit(graph, run_id, cfg)
 
 
 @app.get("/health")
@@ -703,6 +736,24 @@ async def list_sites() -> dict[str, Any]:
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
+
+
+@app.get("/audit")
+async def list_audit(limit: int = 50) -> dict[str, Any]:
+    out = []
+    async with _db.execute(
+        "SELECT ts, run_id, url, question, answer, grounded, sources,"
+        " latency_ms, error FROM events ORDER BY id DESC LIMIT ?",
+        (min(max(limit, 1), 200),),
+    ) as cur:
+        async for ts, run_id, url, question, answer, grounded, sources, lat, err in cur:
+            out.append({
+                "ts": ts, "run_id": run_id, "url": url, "question": question,
+                "answer": answer, "grounded": grounded,
+                "sources": json.loads(sources or "[]"),
+                "latency_ms": lat, "error": err,
+            })
+    return {"events": out}
 
 
 def _graph_for(run_id: str):

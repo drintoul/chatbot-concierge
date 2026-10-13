@@ -125,6 +125,16 @@
   .chatbar { display: flex; gap: 10px; }
   .chatbar input { flex: 1; }
   .chatbar button { padding: 15px 26px; }
+
+  /* audit */
+  .evt .eq { font-weight: 700; margin-bottom: 8px; }
+  .evt .em { color: var(--dim); font-size: 13px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .evt .ea { font-size: 14px; white-space: pre-wrap; }
+  .evt .esrc { margin-top: 8px; font-size: 13px; }
+  .evt .esrc a { color: var(--accent); word-break: break-all; }
+  #a-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  #a-head label { margin: 0; }
+  #a-refresh { padding: 10px 20px; font-size: 14px; }
 </style>
 </head>
 <body>
@@ -141,6 +151,7 @@
     <button class="tab active" data-t="index">① Index site</button>
     <button class="tab" data-t="query">② Query</button>
     <button class="tab" data-t="chat">③ Chatbot</button>
+    <button class="tab" data-t="audit">④ Audit</button>
   </div>
 
   <!-- ================= INDEX ================= -->
@@ -208,14 +219,24 @@
       <button class="cta" type="submit">Send</button>
     </form>
   </section>
+
+  <!-- ================= AUDIT ================= -->
+  <section class="pane" id="pane-audit">
+    <div id="a-head">
+      <label>What visitors asked, and what the concierge said</label>
+      <button class="cta" id="a-refresh" type="button">Refresh</button>
+    </div>
+    <div id="audit"></div>
+  </section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat" };
+const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit" };
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
   Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
+  if (t.dataset.t === "audit") loadAudit();
 });
 
 // ---------- shared ----------
@@ -430,6 +451,37 @@ $("f-chat").addEventListener("submit", async (e) => {
   }
   chat.scrollTop = chat.scrollHeight;
 });
+
+// ---------- workflow 4: audit ----------
+async function loadAudit() {
+  const el = $("audit");
+  el.innerHTML = `<div class="hint">Loading…</div>`;
+  const { events } = await (await fetch("/audit")).json();
+  el.innerHTML = events.length ? "" : `<div class="hint">No questions logged yet.</div>`;
+  for (const e of events) {
+    const d = document.createElement("div");
+    d.className = "card evt";
+    const host = (() => { try { return new URL(e.url).hostname } catch { return e.url } })();
+    const tag = e.error ? `<span class="pill failed">error</span>`
+      : e.grounded === 1 ? `<span class="pill ok">grounded</span>`
+      : `<span class="pill skipped">handoff</span>`;
+    const lat = e.latency_ms != null ? (e.latency_ms / 1000).toFixed(1) + "s" : "?";
+    d.innerHTML =
+      `<div class="eq"></div>` +
+      `<div class="em">${tag} <span>${host}</span> · <span>${lat}</span> · <span>${new Date(e.ts * 1000).toLocaleString()}</span></div>` +
+      `<div class="ea"></div>`;
+    d.querySelector(".eq").textContent = e.question;
+    d.querySelector(".ea").textContent = e.error ? "error: " + e.error : (e.answer || "(no answer)");
+    for (const u of e.sources || []) {
+      const s = document.createElement("div");
+      s.className = "esrc";
+      s.innerHTML = `source: <a href="${u}" target="_blank">${u}</a>`;
+      d.appendChild(s);
+    }
+    el.appendChild(d);
+  }
+}
+$("a-refresh").onclick = loadAudit;
 </script>
 </body>
 </html>
