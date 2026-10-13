@@ -1,4 +1,4 @@
-"""Deterministic LangGraph concierge service — two checkpointed workflows.
+"""Deterministic LangGraph chatbot concierge service — two checkpointed workflows.
 
 index:  crawl (firecrawl, N levels) -> chunk -> embed -> store corpus
 query:  load corpus -> retrieve -> answer
@@ -37,14 +37,14 @@ OLLAMA = os.environ["OLLAMA_BASE_URL"].rstrip("/")
 FIRECRAWL = os.environ["FIRECRAWL_URL"].rstrip("/")
 CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
-DB_PATH = os.environ.get("CONCIERGE_DB_PATH", "/data/langgraph.db")
+DB_PATH = os.environ.get("CHATBOT_CONCIERGE_DB_PATH", "/data/langgraph.db")
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
 ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
-CRAWL_LIMIT = int(os.environ.get("CONCIERGE_CRAWL_LIMIT", "15"))
-CRAWL_DEPTH = int(os.environ.get("CONCIERGE_CRAWL_DEPTH", "2"))
-CRAWL_TIMEOUT_S = float(os.environ.get("CONCIERGE_CRAWL_TIMEOUT", "300"))
+CRAWL_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_LIMIT", "15"))
+CRAWL_DEPTH = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_DEPTH", "2"))
+CRAWL_TIMEOUT_S = float(os.environ.get("CHATBOT_CONCIERGE_CRAWL_TIMEOUT", "300"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
@@ -55,7 +55,7 @@ _db: aiosqlite.Connection = None  # corpus store (same file as checkpoints)
 _pending: set[str] = set()
 
 
-class ConciergeState(TypedDict, total=False):
+class ChatbotConciergeState(TypedDict, total=False):
     url: str
     question: str | None
     crawl_limit: int
@@ -85,18 +85,18 @@ def step(node: str, status: str, **detail: Any) -> dict[str, Any]:
     return {"node": node, "status": status, "at": time.time(), **detail}
 
 
-def fail(state: ConciergeState, node: str, err: Exception | str) -> ConciergeState:
+def fail(state: ChatbotConciergeState, node: str, err: Exception | str) -> ChatbotConciergeState:
     msg = err if isinstance(err, str) else f"{type(err).__name__}: {err}"
     return {"status": "failed", "error": msg, "steps": [step(node, "failed", error=msg[:300])]}
 
 
-def bail(state: ConciergeState) -> bool:
+def bail(state: ChatbotConciergeState) -> bool:
     return state.get("status") == "failed"
 
 
 # ------------------------------------------------------- index-graph nodes
 
-async def crawl(state: ConciergeState) -> ConciergeState:
+async def crawl(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
     hops from the seed URL up to CRAWL_LIMIT pages."""
     if bail(state):
@@ -195,7 +195,7 @@ def _chunk(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
     return chunks
 
 
-async def chunk(state: ConciergeState) -> ConciergeState:
+async def chunk(state: ChatbotConciergeState) -> ChatbotConciergeState:
     if bail(state):
         return {}
     chunks = [
@@ -211,7 +211,7 @@ async def chunk(state: ConciergeState) -> ConciergeState:
     }
 
 
-async def embed(state: ConciergeState) -> ConciergeState:
+async def embed(state: ChatbotConciergeState) -> ChatbotConciergeState:
     if bail(state):
         return {}
     t0 = time.time()
@@ -235,7 +235,7 @@ def _canon(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
-async def store(state: ConciergeState) -> ConciergeState:
+async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Persist the corpus so query runs reuse it — no re-crawl per question."""
     if bail(state):
         return {}
@@ -269,7 +269,7 @@ async def store(state: ConciergeState) -> ConciergeState:
 
 # ------------------------------------------------------- query-graph nodes
 
-async def load(state: ConciergeState) -> ConciergeState:
+async def load(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Pull the persisted corpus for this URL into state."""
     if bail(state):
         return {}
@@ -328,7 +328,7 @@ def _terms(text: str) -> set[str]:
     return {w for w in _WORD.findall(text.lower()) if len(w) > 2 and w not in _STOPWORDS}
 
 
-async def retrieve(state: ConciergeState) -> ConciergeState:
+async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
     if bail(state):
         return {}
     try:
@@ -449,7 +449,7 @@ def _handoff(phone: str | None, email: str | None) -> str:
     )
 
 
-async def answer(state: ConciergeState) -> ConciergeState:
+async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Draft a candidate from the next ranked chunk — single-chunk
     contexts are the only ones this model size handles reliably
     (verified empirically). It does NOT ship: verify decides that."""
@@ -509,7 +509,7 @@ VERIFY_PROMPT = (
 )
 
 
-async def verify(state: ConciergeState) -> ConciergeState:
+async def verify(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Decide whether the candidate ships, retries, or becomes a
     handoff. Terminates the loop by setting status=done."""
     if bail(state):
@@ -519,8 +519,8 @@ async def verify(state: ConciergeState) -> ConciergeState:
     ranked = state.get("ranked") or []
     tries_left = state.get("try_idx", 0) < min(len(ranked), ANSWER_TRIES)
 
-    def ungrounded(**detail: Any) -> ConciergeState:
-        out: ConciergeState = {
+    def ungrounded(**detail: Any) -> ChatbotConciergeState:
+        out: ChatbotConciergeState = {
             "grounded": False,
             "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=False, **detail)],
         }
@@ -571,7 +571,7 @@ async def verify(state: ConciergeState) -> ConciergeState:
 def _build(nodes: list[tuple[str, Any]], retry: str | None = None) -> Any:
     """Linear chain: START -> nodes in order. With retry, the last node
     gets a conditional edge back to `retry` until status is terminal."""
-    builder = StateGraph(ConciergeState)
+    builder = StateGraph(ChatbotConciergeState)
     prev = START
     for name, fn in nodes:
         builder.add_node(name, fn)
@@ -624,14 +624,14 @@ async def lifespan(app: FastAPI):
     await http.aclose()
 
 
-app = FastAPI(title="concierge", lifespan=lifespan)
+app = FastAPI(title="chatbot-concierge", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 class IndexRequest(BaseModel):
     url: HttpUrl
-    limit: int | None = None  # overrides CONCIERGE_CRAWL_LIMIT when set
-    depth: int | None = None  # overrides CONCIERGE_CRAWL_DEPTH when set
+    limit: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_LIMIT when set
+    depth: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_DEPTH when set
     phone: str | None = None  # contact number for handoff answers
     email: str | None = None  # contact email for handoff answers
 
@@ -667,7 +667,7 @@ async def _audit(graph, run_id: str, cfg: dict[str, Any]) -> None:
         pass
 
 
-async def _run(graph, run_id: str, initial: ConciergeState) -> None:
+async def _run(graph, run_id: str, initial: ChatbotConciergeState) -> None:
     cfg = {"configurable": {"thread_id": run_id}}
     try:
         await graph.ainvoke(
@@ -698,7 +698,7 @@ async def index_page() -> FileResponse:
 async def start_index(req: IndexRequest) -> dict[str, str]:
     run_id = "idx:" + uuid.uuid4().hex
     _pending.add(run_id)
-    initial: ConciergeState = {"url": str(req.url)}
+    initial: ChatbotConciergeState = {"url": str(req.url)}
     if req.limit:
         initial["crawl_limit"] = req.limit
     if req.depth:

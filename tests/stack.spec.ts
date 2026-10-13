@@ -2,7 +2,7 @@ import { test, expect, request } from "@playwright/test";
 
 const FIRECRAWL = process.env.FIRECRAWL_URL ?? "http://localhost:3002";
 const OLLAMA = process.env.OLLAMA_URL ?? "http://localhost:11435";
-const CONCIERGE = process.env.CONCIERGE_URL ?? "http://localhost:8000";
+const CHATBOT_CONCIERGE = process.env.CHATBOT_CONCIERGE_URL ?? "http://localhost:8000";
 
 test("ollama answers /api/tags", async () => {
   const ctx = await request.newContext();
@@ -46,7 +46,7 @@ interface RunState {
 
 async function pollRun(ctx: Awaited<ReturnType<typeof request.newContext>>, id: string): Promise<RunState> {
   for (let i = 0; i < 60; i++) {
-    const res = await ctx.get(`${CONCIERGE}/runs/${id}`);
+    const res = await ctx.get(`${CHATBOT_CONCIERGE}/runs/${id}`);
     expect(res.ok(), `run lookup failed: ${await res.text()}`).toBeTruthy();
     const state = (await res.json()) as RunState;
     if (state.status !== "running") return state;
@@ -55,17 +55,17 @@ async function pollRun(ctx: Awaited<ReturnType<typeof request.newContext>>, id: 
   throw new Error("run did not finish in 120s");
 }
 
-test("concierge serves the demo page", async () => {
+test("chatbot-concierge serves the demo page", async () => {
   const ctx = await request.newContext();
-  const res = await ctx.get(`${CONCIERGE}/`);
+  const res = await ctx.get(`${CHATBOT_CONCIERGE}/`);
   expect(res.ok()).toBeTruthy();
-  expect(await res.text()).toContain("concierge");
+  expect(await res.text()).toContain("chatbot-concierge");
 });
 
 const SITE = "https://example.com/";
 
 async function indexSite(ctx: Awaited<ReturnType<typeof request.newContext>>): Promise<RunState> {
-  const start = await ctx.post(`${CONCIERGE}/index`, { data: { url: SITE } });
+  const start = await ctx.post(`${CHATBOT_CONCIERGE}/index`, { data: { url: SITE } });
   expect(start.status()).toBe(202);
   const { run_id } = (await start.json()) as { run_id: string };
   return pollRun(ctx, run_id);
@@ -79,7 +79,7 @@ test("index workflow crawls and stores a corpus", async () => {
   expect(state.status).toBe("done");
   expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "store"]);
 
-  const sites = (await (await ctx.get(`${CONCIERGE}/sites`)).json()) as {
+  const sites = (await (await ctx.get(`${CHATBOT_CONCIERGE}/sites`)).json()) as {
     sites: { url: string; chunk_count: number }[];
   };
   expect(sites.sites.some((s) => s.url === SITE)).toBe(true);
@@ -90,7 +90,7 @@ test("query workflow answers from the stored corpus", async () => {
   const ctx = await request.newContext();
   await indexSite(ctx); // idempotent — rebuilds the corpus
 
-  const start = await ctx.post(`${CONCIERGE}/query`, {
+  const start = await ctx.post(`${CHATBOT_CONCIERGE}/query`, {
     data: { url: SITE, question: "What is this domain used for?" },
   });
   expect(start.status()).toBe(202);
@@ -107,7 +107,7 @@ test("query workflow answers from the stored corpus", async () => {
   expect(state.sources?.length ?? 0).toBeGreaterThan(0);
 
   // Run state persists — checkpointed, inspectable after the fact.
-  const again = await ctx.get(`${CONCIERGE}/runs/${encodeURIComponent(run_id)}`);
+  const again = await ctx.get(`${CHATBOT_CONCIERGE}/runs/${encodeURIComponent(run_id)}`);
   expect((await again.json()).status).toBe("done");
 });
 
@@ -115,12 +115,12 @@ test("query workflow answers from the stored corpus", async () => {
 // runs don't pollute the demo's indexed sites or audit log.
 test("delete site removes the test corpus and its audit events", async () => {
   const ctx = await request.newContext();
-  const res = await ctx.delete(`${CONCIERGE}/sites?url=${encodeURIComponent(SITE)}`);
+  const res = await ctx.delete(`${CHATBOT_CONCIERGE}/sites?url=${encodeURIComponent(SITE)}`);
   expect(res.ok(), `delete failed: ${await res.text()}`).toBeTruthy();
   const body = (await res.json()) as { deleted: boolean };
   expect(body.deleted).toBe(true);
 
-  const sites = (await (await ctx.get(`${CONCIERGE}/sites`)).json()) as {
+  const sites = (await (await ctx.get(`${CHATBOT_CONCIERGE}/sites`)).json()) as {
     sites: { url: string }[];
   };
   expect(sites.sites.some((s) => s.url === SITE)).toBe(false);

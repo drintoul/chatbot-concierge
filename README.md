@@ -2,7 +2,7 @@
 
 Self-contained dev/demo stack in one `docker compose up`: **Ollama** (local
 LLM + embeddings), **Firecrawl** (self-hosted web-scraping API, wired to use
-the project's Ollama for its LLM features), and a **LangGraph concierge** — a
+the project's Ollama for its LLM features), and a **LangGraph chatbot concierge** — a
 deterministic, checkpointed state machine that pipelines scrape → chunk →
 embed → retrieve → answer over those two services. Firecrawl brings its own
 internal Playwright render backend, so JavaScript-heavy pages work with no
@@ -29,7 +29,7 @@ First boot pulls images (~4 GB) and then the ollama models
 | --------- | --------------------------- | ------------------------------ |
 | Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
 | Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/crawl` |
-| Concierge | `http://localhost:8000`     | Demo UI at `/`, API at `/docs` |
+| Chatbot concierge | `http://localhost:8000`     | Demo UI at `/`, API at `/docs` |
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
 > This project's container publishes on **11435** so the two never conflict.
@@ -48,7 +48,7 @@ curl -s -X POST http://localhost:3002/v2/scrape \
   -H "content-type: application/json" \
   -d '{"url":"https://example.com","formats":["markdown"]}'
 
-# Concierge: index a site once (slow, ~1 min), then query it fast forever
+# Chatbot concierge: index a site once (slow, ~1 min), then query it fast forever
 curl -s -X POST http://localhost:8000/index \
   -H "content-type: application/json" \
   -d '{"url":"https://example.com"}'
@@ -85,12 +85,12 @@ docker compose --profile test run --rm e2e
 └────────┬─────────┘
          │ FIRECRAWL_URL
 ┌────────┴─────────┐
-│ concierge        │ :8000 — two checkpointed LangGraph workflows:
+│ chatbot-concierge│ :8000 — two checkpointed LangGraph workflows:
 │ index: crawl →   │      index (crawl→chunk→embed→store) builds a
 │ chunk → embed →  │      persistent corpus per site; query
 │ store            │      (load→retrieve→answer) reuses it — no
 │ query: load →    │      re-crawl per question. Demo UI at /.
-│ retrieve → answer│      Tune via CONCIERGE_CRAWL_LIMIT / _DEPTH /
+│ retrieve → answer│      Tune via CHATBOT_CONCIERGE_CRAWL_LIMIT / _DEPTH /
 └──────────────────┘      _TIMEOUT env vars.
 ```
 
@@ -130,11 +130,11 @@ reservations (needs `nvidia-container-toolkit` on the host).
   and keep it that way, or firewall the ports.
 - `USE_DB_AUTHENTICATION=false` means **Firecrawl has no API key** — fine on
   the compose bridge/localhost, not acceptable exposed to the internet.
-- The concierge API has no auth either — same rule. Don't publish `:8000`
+- The chatbot-concierge API has no auth either — same rule. Don't publish `:8000`
   without a proxy layer.
 - Set a real `FC_POSTGRES_PASSWORD` before deploying.
 - Backup: `docker run --rm -v hustle-stack_ollama-models:/v alpine tar cf - /v`
-  (same pattern for `fc-pg-data`, `fc-redis-data`, `concierge-data`).
+  (same pattern for `fc-pg-data`, `fc-redis-data`, `chatbot-concierge-data`).
 
 ## Limits
 
