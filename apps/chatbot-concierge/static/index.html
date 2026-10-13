@@ -268,6 +268,7 @@
         <label for="a-site">Visitor questions for</label>
         <select id="a-site"></select>
       </div>
+      <button id="a-pdf" class="cta">Save PDF</button>
     </div>
     <div id="audit"></div>
   </section>
@@ -559,6 +560,10 @@ async function loadAudit() {
   }
 }
 $("a-site").onchange = loadAudit;
+$("a-pdf").onclick = () => {
+  const u = $("a-site").value;
+  window.location.href = "/audit/pdf" + (u ? "?url=" + encodeURIComponent(u) : "");
+};
 </script>
 </body>
 </html>

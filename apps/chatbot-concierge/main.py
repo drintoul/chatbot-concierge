@@ -22,12 +22,15 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Annotated, Any, Literal, TypedDict
+from urllib.parse import urlparse
 
 import aiosqlite
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
+from fpdf import FPDF
 from fastapi.staticfiles import StaticFiles
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -800,6 +803,78 @@ async def list_audit(limit: int = 50, url: str | None = None) -> dict[str, Any]:
                 "latency_ms": lat, "error": err,
             })
     return {"events": out}
+
+
+_PDF_MAP = str.maketrans({"→": "->", "’": "'", "‘": "'", "“": '"', "”": '"',
+                          "–": "-", "—": "-", "…": "...", "·": "-"})
+
+
+def _pdf_text(s: str | None) -> str:
+    """Core PDF fonts are latin-1 only — fold unicode, replace the rest,
+    and break >60-char unbreakable runs (URLs) so word-wrap never overflows."""
+    t = (s or "").translate(_PDF_MAP).encode("latin-1", "replace").decode("latin-1")
+    return re.sub(r"\S{60}", lambda m: m.group(0) + " ", t)
+
+
+@app.get("/audit/pdf")
+async def audit_pdf(url: str | None = None) -> Response:
+    """Download the audit log as a PDF — filtered by site when ?url= is given."""
+    sql = (
+        "SELECT ts, run_id, url, question, answer, grounded, sources,"
+        " latency_ms, error FROM events"
+    )
+    args: list[Any] = []
+    host = "all-sites"
+    if url:
+        canon = _canon(url)
+        sql += " WHERE url=?"
+        args.append(canon)
+        host = urlparse(canon).hostname or canon
+    sql += " ORDER BY id DESC LIMIT 500"
+    rows = []
+    async with _db.execute(sql, args) as cur:
+        async for r in cur:
+            rows.append(r)
+
+    def _build() -> bytes:
+        pdf = FPDF()
+        pdf.set_auto_page_break(True, margin=15)
+        pdf.add_page()
+        pdf.set_font("helvetica", "B", 16)
+        pdf.cell(0, 10, _pdf_text(f"Audit log — {host}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("helvetica", "", 9)
+        pdf.set_text_color(110)
+        pdf.cell(0, 6, _pdf_text(f"{len(rows)} events — generated {datetime.now():%Y-%m-%d %H:%M}"),
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(4)
+
+        for ts, run_id, ev_url, question, answer, grounded, sources, lat, err in rows:
+            outcome = "error" if err else ("grounded" if grounded == 1 else "handoff")
+            meta = (f"{datetime.fromtimestamp(ts):%Y-%m-%d %H:%M}   {outcome}   "
+                    f"{lat / 1000:.1f}s   {run_id}")
+            pdf.set_font("helvetica", "", 8)
+            pdf.set_text_color(110)
+            pdf.multi_cell(0, 5, _pdf_text(meta), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("helvetica", "B", 11)
+            pdf.set_text_color(0)
+            pdf.multi_cell(0, 6, _pdf_text(f"Q: {question}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("helvetica", "", 10)
+            pdf.multi_cell(0, 5, _pdf_text(f"A: {err or answer or '(no answer)'}"), new_x="LMARGIN", new_y="NEXT")
+            for src in json.loads(sources or "[]"):
+                pdf.set_font("helvetica", "", 8)
+                pdf.set_text_color(60, 60, 160)
+                pdf.multi_cell(0, 4, _pdf_text(f"    source: {src}"), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0)
+            pdf.ln(3)
+        return bytes(pdf.output())
+
+    data = await asyncio.to_thread(_build)
+    fname = f"audit-{host}-{datetime.now():%Y-%m}.pdf"
+    return Response(
+        data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 def _graph_for(run_id: str):
