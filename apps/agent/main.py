@@ -40,7 +40,8 @@ EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("AGENT_DB_PATH", "/data/langgraph.db")
 TOP_K = 6
 MIN_SIMILARITY = 0.15
-ANSWER_TRIES = 3  # single-chunk answer attempts before genuine refusal
+EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
+ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
 CRAWL_LIMIT = int(os.environ.get("AGENT_CRAWL_LIMIT", "15"))
 CRAWL_DEPTH = int(os.environ.get("AGENT_CRAWL_DEPTH", "2"))
 CRAWL_TIMEOUT_S = float(os.environ.get("AGENT_CRAWL_TIMEOUT", "300"))
@@ -69,6 +70,8 @@ class AgentState(TypedDict, total=False):
     cand_source: str
     try_idx: int                        # next ranked chunk to attempt
     grounded: bool                      # verify judged the candidate supported
+    missing_terms: list[str]            # question terms absent from whole corpus
+    no_evidence: bool                   # all terms absent + weak retrieval
     sources: list[str]
     answer: str | None
     # operator.add reducer: every node appends a trace entry.
@@ -365,8 +368,19 @@ async def retrieve(state: AgentState) -> AgentState:
             key=lambda r: (-r["score"], r["index"]),
         )
         ranked = [r for r in scored if r["score"] >= MIN_SIMILARITY][:TOP_K]
+        # No-evidence flag: every content term absent from the corpus AND
+        # weak retrieval — a vocabulary disconnect that can't be answered.
+        # Requires ALL terms missing: inflections ("used" vs "use") make
+        # any-single-term-missing too trigger-happy.
+        no_evidence = bool(
+            q_terms
+            and all(df[w] == 0 for w in q_terms)
+            and (scored[0]["score"] < EVIDENCE_BEST if scored else False)
+        )
         return {
             "ranked": ranked,
+            "missing_terms": sorted(w for w in q_terms if df[w] == 0),
+            "no_evidence": no_evidence,
             "steps": [step("retrieve", "ok", top_k=len(ranked), best=round(scored[0]["score"], 4) if scored else 0)],
         }
     except Exception as e:
@@ -432,6 +446,15 @@ async def answer(state: AgentState) -> AgentState:
     t0 = time.time()
     ranked = state.get("ranked") or []
     try_idx = state.get("try_idx", 0)
+    # Fast miss: the question's entire vocabulary is absent from the
+    # corpus and retrieval is weak — no chunk can support an answer, so
+    # skip the decode loop (each attempt is a ~30s+ LLM call) and let
+    # verify emit the handoff.
+    if try_idx == 0 and state.get("no_evidence"):
+        return {
+            "candidate": None,
+            "steps": [step("answer", "ok", skipped=True, missing=state.get("missing_terms") or [])],
+        }
     if not ranked or try_idx >= min(len(ranked), ANSWER_TRIES):
         return {"candidate": None, "steps": [step("answer", "ok", tried=try_idx)]}
     r = ranked[try_idx]
@@ -494,7 +517,14 @@ async def verify(state: AgentState) -> AgentState:
         return out
 
     if not cand:
-        return ungrounded(reason="no candidate")
+        # No candidate at all — nothing left to try (empty ranked or the
+        # no-evidence fast path). Terminal: always hand off here.
+        return {
+            "answer": _handoff(state.get("phone")),
+            "status": "done",
+            "grounded": False,
+            "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=False)],
+        }
     if _is_refusal(cand):
         return ungrounded(reason="refusal")
     try:

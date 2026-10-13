@@ -221,6 +221,7 @@ const fmt = (d) =>
    d.best != null ? "best " + d.best : null, d.model || null,
    d.attempt != null ? "attempt " + d.attempt : null,
    d.grounded != null ? (d.grounded ? "grounded" : "not grounded") : null,
+   d.missing?.length ? "missing: " + d.missing.join(" ") : null,
    d.reason || d.verdict || null]
     .filter(Boolean).join(" · ");
 
