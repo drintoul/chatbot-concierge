@@ -35,6 +35,7 @@ EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("AGENT_DB_PATH", "/data/langgraph.db")
 TOP_K = 6
 MIN_SIMILARITY = 0.15
+ANSWER_TRIES = 3  # single-chunk answer attempts before genuine refusal
 CRAWL_LIMIT = int(os.environ.get("AGENT_CRAWL_LIMIT", "15"))  # max pages per run
 CRAWL_DEPTH = int(os.environ.get("AGENT_CRAWL_DEPTH", "2"))   # link hops from seed
 CRAWL_TIMEOUT_S = float(os.environ.get("AGENT_CRAWL_TIMEOUT", "300"))
@@ -219,13 +220,43 @@ def _cos(a: list[float], b: list[float]) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
-_PRICE_INTENT = re.compile(
-    r"\b(cost|price|pricing|rates?|fees?|charge|how much|book|pay|stay|per night)\b", re.I
+# Intent hints: (question pattern, content-marker pattern, boost). Domain-
+# agnostic — a cost question deserves chunks that literally contain prices
+# on ANY site; embedding similarity alone misses this paraphrase gap.
+_INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
+    (
+        re.compile(r"\b(cost|price|pricing|rates?|fees?|charges?|how much|pay)\b", re.I),
+        re.compile(r"\$\s?\d|\bper (night|person|couple|guest|hour)|\bfrom \$", re.I),
+        0.15,
+    ),
+    (
+        re.compile(r"\b(hours?|open|close|check.?in|check.?out|when)\b", re.I),
+        re.compile(r"\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b(mon|tue|wed|thu|fri|sat|sun)(day)?\b", re.I),
+        0.10,
+    ),
+]
+
+
+_STOPWORDS = frozenset(
+    "a an the is are was were do does did can could should would will i you we they "
+    "it its this that what which who whom how when where why much many any some "
+    "of to in on at for with about as by from or and but not no if then than so "
+    "be been being have has had having".split()
 )
-_PRICE_HINT = re.compile(
-    r"\$\s?\d|\b(per night|per person|per couple|per guest|rates?|from \$|starting)\b", re.I
-)
-_PRICE_BOOST = 0.12
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _terms(text: str) -> set[str]:
+    return {w for w in _WORD.findall(text.lower()) if len(w) > 2 and w not in _STOPWORDS}
+
+
+def _lexical_score(q_terms: set[str], text: str, idf: dict[str, float]) -> float:
+    """IDF-weighted coverage: rare question terms (cost, pet) outweigh
+    site-ubiquitous ones (the business's own name)."""
+    if not q_terms:
+        return 0.0
+    t_terms = _terms(text)
+    return sum(idf[w] for w in q_terms & t_terms) / sum(idf.values())
 
 
 async def retrieve(state: AgentState) -> AgentState:
@@ -241,13 +272,27 @@ async def retrieve(state: AgentState) -> AgentState:
         )
         res.raise_for_status()
         qv = res.json()["data"][0]["embedding"]
-        price_q = bool(_PRICE_INTENT.search(q))
+
+        # Hybrid score over the whole corpus: embedding similarity plus
+        # stopword-filtered question-term coverage. The lexical stage
+        # rescues chunks whose phrasing diverges from the question but
+        # literally name the entity asked about ("$275 per night" barely
+        # resembles "how much does it cost" in embedding space).
+        q_terms = _terms(q)
+        n = len(state["chunks"])
+        df = {w: sum(w in _terms(c["text"]) for c in state["chunks"]) for w in q_terms}
+        idf = {w: math.log(1 + n / (df[w] or 1)) for w in q_terms}
+        intents = [(hint, b) for qr, hint, b in _INTENTS if qr.search(q)]
+
+        def score(c: dict[str, Any], e: list[float]) -> float:
+            s = 0.55 * _cos(qv, e) + 0.3 * _lexical_score(q_terms, c["text"], idf)
+            return s + sum(b for hint, b in intents if hint.search(c["text"]))
+
         scored = sorted(
             (
                 {
                     "index": i,
-                    "score": _cos(qv, e)
-                    + (_PRICE_BOOST if price_q and _PRICE_HINT.search(c["text"]) else 0),
+                    "score": score(c, e),
                     "text": c["text"],
                     "source": c["source"],
                 }
@@ -255,6 +300,7 @@ async def retrieve(state: AgentState) -> AgentState:
             ),
             key=lambda r: (-r["score"], r["index"]),
         )
+
         ranked = [r for r in scored if r["score"] >= MIN_SIMILARITY][:TOP_K]
         return {
             "ranked": ranked,
@@ -269,14 +315,13 @@ SYSTEM_PROMPT = (
     "ONLY the supplied scraped-page context. Speak plainly in second "
     "person — never mention \"the context\", \"the page\", or that you "
     "are reading from a source. If the context mentions any prices, "
-    "packages, offerings, hours, or policies even tangentially related "
-    "to the question, list each one with its qualifiers exactly as "
-    "written (per person, per night, from/+ pricing, taxes, gratuities, "
-    "minimums, day or date restrictions). If something asked about isn't "
-    "covered, say so plainly (\"we don't publish general nightly "
-    "rates\"), not as a citation. Only if nothing relevant exists, say "
-    "exactly: \"I don't have that information.\" Never invent facts, "
-    "dates, prices, or availability."
+    "packages, offerings, hours, policies, locations, or contacts even "
+    "tangentially related to the question, list each one plainly with "
+    "its exact qualifiers as written (amounts, units, taxes, minimums, "
+    "day or date restrictions, eligibility), and note plainly what "
+    "isn't covered. Only if nothing at all is related, say exactly: "
+    "\"I don't have that information.\" Never invent facts, dates, "
+    "prices, or availability."
 )
 
 
@@ -291,32 +336,41 @@ async def answer(state: AgentState) -> AgentState:
             "status": "done",
             "steps": [step("answer", "ok", grounded=False)],
         }
-    sources = list(dict.fromkeys(r["source"] for r in ranked))
-    context = "\n\n---\n\n".join(
-        f"[source: {r['source']}]\n{r['text']}" for r in ranked
-    )
-    try:
-        res = await http.post(
-            f"{OLLAMA}/v1/chat/completions",
-            json={
-                "model": CHAT_MODEL,
-                "temperature": 0,  # deterministic decode
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {state['question']}"},
-                ],
-            },
-        )
-        res.raise_for_status()
-        text = res.json()["choices"][0]["message"]["content"].strip()
-        return {
-            "answer": text,
-            "sources": sources,
-            "status": "done",
-            "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL)],
-        }
-    except Exception as e:
-        return fail(state, "answer", e)
+    # Single-chunk answering: this model size refuses whenever the context
+    # mixes chunks that don't all contain the answer — verified empirically.
+    # Try the top chunks one at a time; first substantive answer wins and
+    # its source is the citation. All-refusal means the corpus genuinely
+    # lacks the fact.
+    refused = "i don't have that information"
+    for r in ranked[:ANSWER_TRIES]:
+        try:
+            res = await http.post(
+                f"{OLLAMA}/v1/chat/completions",
+                json={
+                    "model": CHAT_MODEL,
+                    "temperature": 0,  # deterministic decode
+                    "messages": [
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": f"CONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
+                    ],
+                },
+            )
+            res.raise_for_status()
+            text = res.json()["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            return fail(state, "answer", e)
+        if not text.lower().startswith(refused):
+            return {
+                "answer": text,
+                "sources": [r["source"]],
+                "status": "done",
+                "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"])],
+            }
+    return {
+        "answer": "I don't have that information.",
+        "status": "done",
+        "steps": [step("answer", "ok", grounded=False, tried=min(len(ranked), ANSWER_TRIES))],
+    }
 
 
 def _route(state: AgentState) -> str:
