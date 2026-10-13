@@ -88,11 +88,12 @@
 
   .site-list { display: grid; gap: 10px; margin-bottom: 24px; }
   .site {
-    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
     padding: 14px 18px; font-size: 14px;
   }
   .site .u { font-family: ui-monospace, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-  .site .m { color: var(--dim); white-space: nowrap; font-size: 13px; }
+  .site-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .site .m { color: var(--dim); font-size: 13px; }
   .site .tw { cursor: pointer; user-select: none; font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
   .site-wrap { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; }
 
@@ -374,11 +375,12 @@ async function loadSites() {
     wrap.className = "site-wrap";
     const row = document.createElement("div");
     row.className = "site";
-    row.innerHTML = `<span class="u">${s.url}</span>` +
-      `<span class="m">${s.chunk_count} chunks · ${s.pages?.length || "?"} pages` +
-      (s.phone ? ` · ${s.phone}` : "") +
-      (s.email ? ` · ${s.email}` : "") +
-      ` · ${new Date(s.indexed_at*1000).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})}</span>` +
+    row.innerHTML = `<div class="site-main"><span class="u">${s.url}</span>` +
+      `<span class="m">${s.pages?.length || "?"} pages · ${s.chunk_count} chunks</span>` +
+      (s.phone || s.email
+        ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
+        : "") +
+      `<span class="m">${new Date(s.indexed_at*1000).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})}</span></div>` +
       `<span class="tw">tree ▾</span>`;
     const treeHolder = document.createElement("div");
     treeHolder.style.display = "none";
