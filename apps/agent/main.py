@@ -60,6 +60,7 @@ class AgentState(TypedDict, total=False):
     crawl_limit: int
     crawl_depth: int
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
+    phone: str | None                    # best-guess contact number for handoff
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
     ranked: list[dict[str, Any]]
@@ -82,6 +83,27 @@ def fail(state: AgentState, node: str, err: Exception | str) -> AgentState:
 
 def bail(state: AgentState) -> bool:
     return state.get("status") == "failed"
+
+
+_TEL_LINK = re.compile(r"tel:([+\d][\d().\- ]{4,19}\d)", re.I)
+_PHONE = re.compile(r"(?<!\d)(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}(?!\d)")
+
+
+def _fmt_phone(raw: str) -> str:
+    d = re.sub(r"\D", "", raw)
+    if len(d) == 11 and d.startswith("1"):
+        d = d[1:]
+    return f"({d[:3]}) {d[3:6]}-{d[6:]}" if len(d) == 10 else raw
+
+
+def _find_phone(texts: list[str]) -> str | None:
+    """Best-guess contact number: tel: links first (deliberate markup),
+    then bare NA phone patterns."""
+    for pat in (_TEL_LINK, _PHONE):
+        for t in texts:
+            if m := pat.search(t):
+                return _fmt_phone(m.group(1 if pat is _TEL_LINK else 0))
+    return None
 
 
 # ------------------------------------------------------- index-graph nodes
@@ -132,8 +154,17 @@ async def crawl(state: AgentState) -> AgentState:
             })
         if not pages:
             raise RuntimeError("crawl returned no usable pages")
+        # Scan contact-ish pages first — that's where numbers live.
+        texts = [
+            p["markdown"]
+            for p in sorted(
+                pages,
+                key=lambda p: 0 if re.search(r"contact|location|hours", p["url"], re.I) else 1,
+            )
+        ]
         return {
             "pages": pages,
+            "phone": _find_phone(texts),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
                            pages=len(pages), job=job_id)],
         }
@@ -231,17 +262,19 @@ async def store(state: AgentState) -> AgentState:
         return {}
     url = _canon(state["url"])
     await _db.execute(
-        """INSERT INTO corpora(url, title, pages, chunks, embeddings, indexed_at)
-           VALUES(?,?,?,?,?,?)
+        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, indexed_at)
+           VALUES(?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
-             embeddings=excluded.embeddings, indexed_at=excluded.indexed_at""",
+             embeddings=excluded.embeddings, phone=excluded.phone,
+             indexed_at=excluded.indexed_at""",
         (
             url,
             (state.get("pages") or [{}])[0].get("title"),
             json.dumps([{k: p[k] for k in ("url", "title")} for p in state.get("pages", [])]),
             json.dumps(state["chunks"]),
             json.dumps(state["embeddings"]),
+            state.get("phone"),
             time.time(),
         ),
     )
@@ -260,14 +293,19 @@ async def load(state: AgentState) -> AgentState:
         return {}
     url = _canon(state["url"])
     async with _db.execute(
-        "SELECT chunks, embeddings FROM corpora WHERE url=?", (url,)
+        "SELECT chunks, embeddings, phone FROM corpora WHERE url=?", (url,)
     ) as cur:
         row = await cur.fetchone()
     if not row:
         return fail(state, "load", f"site not indexed — run the Index workflow first: {url}")
+    chunks = json.loads(row[0])
+    # Corpora indexed before phone extraction still get a handoff number:
+    # scan the stored chunks rather than forcing a re-index.
+    phone = row[2] or _find_phone([c["text"] for c in chunks])
     return {
-        "chunks": json.loads(row[0]),
+        "chunks": chunks,
         "embeddings": json.loads(row[1]),
+        "phone": phone,
         "steps": [step("load", "ok", url=url)],
     }
 
@@ -382,10 +420,14 @@ SYSTEM_PROMPT = (
 # The model's literal refusal is an internal sentinel — the sequential
 # loop keys on it, and visitors get a human handoff instead.
 REFUSAL = "i don't have that information"
-HANDOFF = (
-    "I'm sorry — I couldn't find that on our website. "
-    "Please give us a call and our team will be happy to help."
-)
+
+
+def _handoff(phone: str | None) -> str:
+    at = f" at {phone}" if phone else ""
+    return (
+        "I'm sorry — I couldn't find that on our website. "
+        f"Please give us a call{at} and our team will be happy to help."
+    )
 
 
 async def answer(state: AgentState) -> AgentState:
@@ -395,7 +437,7 @@ async def answer(state: AgentState) -> AgentState:
     ranked = state.get("ranked") or []
     if not ranked:
         return {
-            "answer": HANDOFF,
+            "answer": _handoff(state.get("phone")),
             "status": "done",
             "steps": [step("answer", "ok", grounded=False)],
         }
@@ -429,7 +471,7 @@ async def answer(state: AgentState) -> AgentState:
                 "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"])],
             }
     return {
-        "answer": HANDOFF,
+        "answer": _handoff(state.get("phone")),
         "status": "done",
         "steps": [step("answer", "ok", grounded=False, tried=min(len(ranked), ANSWER_TRIES))],
     }
@@ -458,9 +500,15 @@ async def lifespan(app: FastAPI):
     await _db.execute(
         """CREATE TABLE IF NOT EXISTS corpora(
              url TEXT PRIMARY KEY, title TEXT, pages TEXT,
-             chunks TEXT, embeddings TEXT, indexed_at REAL)"""
+             chunks TEXT, embeddings TEXT, phone TEXT, indexed_at REAL)"""
     )
     await _db.commit()
+    # Pre-phone-schema databases: add the column if missing.
+    async with _db.execute("PRAGMA table_info(corpora)") as cur:
+        cols = {r[1] async for r in cur}
+    if "phone" not in cols:
+        await _db.execute("ALTER TABLE corpora ADD COLUMN phone TEXT")
+        await _db.commit()
 
     _index_graph = _build(
         [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
@@ -561,6 +609,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "url": v.get("url"),
         "question": v.get("question"),
         "title": (v.get("pages") or [{}])[0].get("title"),
+        "phone": v.get("phone"),
         "page_count": len(v.get("pages") or []),
         "pages": [{k: p.get(k) for k in ("url", "title")} for p in (v.get("pages") or [])],
         "steps": v.get("steps", []),
