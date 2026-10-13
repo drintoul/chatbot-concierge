@@ -45,7 +45,7 @@ EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
 ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
 CRAWL_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_LIMIT", "15"))
 CRAWL_DEPTH = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_DEPTH", "2"))
-CRAWL_TIMEOUT_S = float(os.environ.get("CHATBOT_CONCIERGE_CRAWL_TIMEOUT", "300"))
+CRAWL_TIMEOUT_S = float(os.environ.get("CHATBOT_CONCIERGE_CRAWL_TIMEOUT", "900"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
@@ -138,8 +138,18 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             if job.get("status") in ("failed", "cancelled") or time.time() > deadline:
                 raise RuntimeError(f"crawl job {job_id} {job.get('status') or 'timed out'}")
 
+        # Results paginate at 100 pages — follow `next` until exhausted.
+        data = list(job.get("data") or [])
+        while job.get("next"):
+            nxt = await http.get(
+                f"{FIRECRAWL}/v2/crawl/{job_id}", params={"skip": len(data)}
+            )
+            nxt.raise_for_status()
+            job = nxt.json()
+            data += job.get("data") or []
+
         pages = []
-        for d in job.get("data") or []:
+        for d in data:
             md = d.get("markdown") or ""
             if len(md) < 40:
                 continue
