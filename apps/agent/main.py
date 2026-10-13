@@ -421,6 +421,28 @@ SYSTEM_PROMPT = (
 # loop keys on it, and visitors get a human handoff instead.
 REFUSAL = "i don't have that information"
 
+# Soft refusals dodge the sentinel: "we don't have information on X",
+# "not mentioned", "I'm sorry, I cannot…". Keying on negation +
+# info-words (not the entity) keeps substantive negatives like "No, we
+# don't have a bowling alley" from being swallowed.
+_SOFT_REFUSAL = re.compile(
+    r"\b(don'?t|do not|doesn'?t|does not|cannot|can'?t|couldn'?t|no)\s+"
+    r"(have\s+|got\s+)?(enough\s+|any\s+|specific\s+|detailed\s+)?"
+    r"(information|info|details?|data|knowledge|mention)\b|"
+    r"\b(not|isn'?t|is not|aren'?t|are not|wasn'?t)\s+"
+    r"(mentioned|provided|listed|stated|included|specified|found|available)\b|"
+    r"\bi('m| am) sorry\b|\bapolog",
+    re.I,
+)
+
+
+def _is_refusal(text: str) -> bool:
+    # Refusals announce themselves upfront — only scan the opening so a
+    # caveat mid-answer ("…but we don't have details on pricing") can't
+    # sink an otherwise substantive response.
+    head = text[:240].lower()
+    return head.startswith(REFUSAL) or bool(_SOFT_REFUSAL.search(head))
+
 
 def _handoff(phone: str | None) -> str:
     at = f" at {phone}" if phone else ""
@@ -463,7 +485,7 @@ async def answer(state: AgentState) -> AgentState:
             text = res.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
             return fail(state, "answer", e)
-        if not text.lower().startswith(REFUSAL):
+        if not _is_refusal(text):
             return {
                 "answer": text,
                 "sources": [r["source"]],
