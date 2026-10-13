@@ -82,11 +82,15 @@ docker compose --profile test run --rm e2e
          │ FIRECRAWL_URL
 ┌────────┴─────────┐
 │ agent            │ :8000 — LangGraph state machine (FastAPI).
-│ scrape → chunk → │      Fixed edges, temperature-0 LLM calls, cosine
+│ crawl → chunk →  │      Fixed edges, temperature-0 LLM calls, cosine
 │ embed → retrieve │      ranking — deterministic by construction.
-│ → answer         │      Every node checkpoints to SQLite
-└──────────────────┘      (agent-data volume) so each run is an
+│ → answer         │      Crawls 2 levels / 15 pages via firecrawl
+└──────────────────┘      /v2/crawl, keeps a source URL per chunk, and
+                          cites sources in answers. Every node checkpoints
+                          to SQLite (agent-data volume) — each run is an
                           inspectable state trace, not a one-shot call.
+                          Tune via AGENT_CRAWL_LIMIT / AGENT_CRAWL_DEPTH /
+                          AGENT_CRAWL_TIMEOUT env vars.
 ```
 
 There is no standalone Playwright service — `firecrawl-playwright` is

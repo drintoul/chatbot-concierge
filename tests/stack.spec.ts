@@ -40,6 +40,8 @@ interface RunState {
   steps: { node: string; status: string }[];
   answer?: string | null;
   error?: string | null;
+  sources?: string[];
+  page_count?: number;
 }
 
 async function pollRun(ctx: Awaited<ReturnType<typeof request.newContext>>, id: string): Promise<RunState> {
@@ -74,7 +76,8 @@ test("agent runs deterministic scrape→answer pipeline", async () => {
   expect(state.status).toBe("done");
   expect(state.answer ?? "").toMatch(/example/i);
   // Fixed graph order — determinism means the node trace is identical every run.
-  expect(state.steps.map((s) => s.node)).toEqual(["start", "scrape", "chunk", "embed", "retrieve", "answer"]);
+  expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "retrieve", "answer"]);
+  expect(state.sources?.length ?? 0).toBeGreaterThan(0);
 });
 
 test("agent checkpoints run state for later inspection", async () => {
@@ -87,7 +90,8 @@ test("agent checkpoints run state for later inspection", async () => {
   const state = await pollRun(ctx, run_id);
 
   expect(state.status).toBe("done");
-  expect(state.steps.map((s) => s.node)).toEqual(["start", "scrape", "chunk", "embed", "retrieve"]);
+  expect(state.page_count ?? 0).toBeGreaterThan(0);
+  expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "retrieve"]);
   expect(state.steps.at(-1)?.status).toBe("skipped");
 
   // Same run, re-fetched — state comes from the SQLite checkpointer.

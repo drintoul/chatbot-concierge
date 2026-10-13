@@ -57,7 +57,7 @@
 <body>
 <main>
   <h1>hustle-agent</h1>
-  <div class="sub">Deterministic LangGraph pipeline — scrape → chunk → embed → retrieve → answer. Every node checkpoints; watch it progress below.</div>
+  <div class="sub">Deterministic LangGraph pipeline — crawl (2 levels) → chunk → embed → retrieve → answer. Every node checkpoints; watch it progress below.</div>
 
   <form id="f">
     <div>
@@ -82,7 +82,7 @@ const f = document.getElementById("f"), go = document.getElementById("go"),
 let rendered = 0;
 
 const fmt = (d) =>
-  [d.ms != null ? d.ms + "ms" : null, d.chars != null ? d.chars + " chars" : null,
+  [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null, d.chars != null ? d.chars + " chars" : null,
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
    d.best != null ? "best " + d.best : null, d.model || null, d.reason || null]
     .filter(Boolean).join(" · ");
@@ -111,6 +111,13 @@ function finish(state) {
     state.status === "failed" ? state.error || "unknown error"
     : (state.answer || "(indexing run — no question asked)");
   outEl.appendChild(card);
+  if (state.sources?.length) {
+    const sc = document.createElement("div");
+    sc.className = "card";
+    sc.innerHTML = "<h2>sources</h2>" +
+      state.sources.map(u => `<div><a href="${u}" style="color:#4f8cff" target="_blank">${u}</a></div>`).join("");
+    outEl.appendChild(sc);
+  }
 }
 
 async function poll(id) {

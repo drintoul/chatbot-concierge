@@ -1,6 +1,7 @@
 """Deterministic LangGraph agent service.
 
-Pipeline: scrape (firecrawl) -> chunk -> embed (ollama) -> retrieve -> answer.
+Pipeline: crawl (firecrawl, 2 levels) -> chunk -> embed (ollama) -> retrieve
+-> answer, with per-chunk source URLs so answers cite the page they came from.
 Every edge is fixed code — the LLM never decides control flow. The whole run
 is checkpointed to SQLite (langgraph-checkpoint-sqlite), so GET /runs/{id}
 returns the persisted state at any point: each node appends to `steps`,
@@ -32,8 +33,11 @@ FIRECRAWL = os.environ["FIRECRAWL_URL"].rstrip("/")
 CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("AGENT_DB_PATH", "/data/langgraph.db")
-TOP_K = 4
+TOP_K = 6
 MIN_SIMILARITY = 0.15
+CRAWL_LIMIT = int(os.environ.get("AGENT_CRAWL_LIMIT", "15"))  # max pages per run
+CRAWL_DEPTH = int(os.environ.get("AGENT_CRAWL_DEPTH", "2"))   # link hops from seed
+CRAWL_TIMEOUT_S = float(os.environ.get("AGENT_CRAWL_TIMEOUT", "300"))
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
 _graph = None
@@ -44,11 +48,11 @@ _pending: set[str] = set()  # run_ids accepted but not yet checkpointed
 class AgentState(TypedDict, total=False):
     url: str
     question: str | None
-    markdown: str
-    title: str | None
-    chunks: list[str]
+    pages: list[dict[str, Any]]          # [{url, title, markdown}]
+    chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
-    ranked: list[dict[str, Any]]
+    ranked: list[dict[str, Any]]         # [{index, score, text, source}]
+    sources: list[str]                   # source URLs cited by the answer
     answer: str | None
     # operator.add reducer: every node appends a trace entry → visible
     # progression of the run inside the checkpoint.
@@ -72,30 +76,59 @@ def bail(state: AgentState) -> bool:
 
 # ----------------------------------------------------------------- nodes
 
-async def scrape(state: AgentState) -> AgentState:
+async def crawl(state: AgentState) -> AgentState:
+    """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
+    hops from the seed URL up to CRAWL_LIMIT pages."""
     if bail(state):
         return {}
     t0 = time.time()
     try:
         res = await http.post(
-            f"{FIRECRAWL}/v2/scrape",
-            json={"url": state["url"], "formats": ["markdown"], "onlyMainContent": True},
+            f"{FIRECRAWL}/v2/crawl",
+            json={
+                "url": state["url"],
+                "limit": CRAWL_LIMIT,
+                "maxDiscoveryDepth": CRAWL_DEPTH,
+                "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
+            },
         )
         res.raise_for_status()
         body = res.json()
-        if not body.get("success"):
-            raise RuntimeError(f"firecrawl scrape failed: {str(body)[:200]}")
-        data = body["data"]
-        md = data.get("markdown") or ""
-        if len(md) < 40:
-            raise RuntimeError("scraped page has too little content")
+        job_id = body.get("id") or (body.get("data") or {}).get("id")
+        if not body.get("success", True) or not job_id:
+            raise RuntimeError(f"crawl submit failed: {str(body)[:200]}")
+
+        deadline = t0 + CRAWL_TIMEOUT_S
+        while True:
+            await asyncio.sleep(3)
+            poll = await http.get(f"{FIRECRAWL}/v2/crawl/{job_id}")
+            poll.raise_for_status()
+            job = poll.json()
+            if job.get("status") == "completed":
+                break
+            if job.get("status") in ("failed", "cancelled") or time.time() > deadline:
+                raise RuntimeError(f"crawl job {job_id} {job.get('status') or 'timed out'}")
+
+        pages = []
+        for d in job.get("data") or []:
+            md = d.get("markdown") or ""
+            if len(md) < 40:
+                continue
+            meta = d.get("metadata") or {}
+            pages.append({
+                "url": meta.get("sourceURL") or meta.get("url") or state["url"],
+                "title": meta.get("title"),
+                "markdown": md,
+            })
+        if not pages:
+            raise RuntimeError("crawl returned no usable pages")
         return {
-            "markdown": md,
-            "title": (data.get("metadata") or {}).get("title"),
-            "steps": [step("scrape", "ok", ms=round((time.time() - t0) * 1000), chars=len(md))],
+            "pages": pages,
+            "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
+                           pages=len(pages), job=job_id)],
         }
     except Exception as e:
-        return fail(state, "scrape", e)
+        return fail(state, "crawl", e)
 
 
 import re
@@ -147,10 +180,16 @@ def _chunk(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
 async def chunk(state: AgentState) -> AgentState:
     if bail(state):
         return {}
-    chunks = _chunk(state["markdown"])
+    chunks = [
+        {"text": t, "source": p["url"]}
+        for p in state.get("pages", [])
+        for t in _chunk(p["markdown"])
+    ]
+    if not chunks:
+        return fail(state, "chunk", "no usable content after cleaning")
     return {
         "chunks": chunks,
-        "steps": [step("chunk", "ok", count=len(chunks))],
+        "steps": [step("chunk", "ok", count=len(chunks), pages=len(state.get("pages") or []))],
     }
 
 
@@ -161,7 +200,7 @@ async def embed(state: AgentState) -> AgentState:
     try:
         res = await http.post(
             f"{OLLAMA}/v1/embeddings",
-            json={"model": EMBED_MODEL, "input": state["chunks"]},
+            json={"model": EMBED_MODEL, "input": [c["text"] for c in state["chunks"]]},
         )
         res.raise_for_status()
         embs = [d["embedding"] for d in res.json()["data"]]
@@ -195,7 +234,7 @@ async def retrieve(state: AgentState) -> AgentState:
         qv = res.json()["data"][0]["embedding"]
         scored = sorted(
             (
-                {"index": i, "score": _cos(qv, e), "text": c}
+                {"index": i, "score": _cos(qv, e), "text": c["text"], "source": c["source"]}
                 for i, (c, e) in enumerate(zip(state["chunks"], state["embeddings"]))
             ),
             key=lambda r: (-r["score"], r["index"]),
@@ -211,13 +250,14 @@ async def retrieve(state: AgentState) -> AgentState:
 
 SYSTEM_PROMPT = (
     "You answer questions using ONLY the supplied scraped-page context. "
-    "If the context contains relevant information, summarize it in 1-3 "
-    "sentences, sticking strictly to what the context states. Preserve "
-    "pricing and availability qualifiers exactly as written (per person, "
-    "per night, from/+ pricing, taxes, gratuities, minimums, day or date "
-    "restrictions). If the context contains nothing relevant, say exactly: "
-    "\"I don't have that information.\" Never invent facts, dates, prices, "
-    "or availability."
+    "If the context mentions any prices, packages, offerings, hours, or "
+    "policies even tangentially related to the question, list each one "
+    "with its qualifiers exactly as written (per person, per night, "
+    "from/+ pricing, taxes, gratuities, minimums, day or date "
+    "restrictions), and say what the context does not cover. Only if the "
+    "context contains nothing at all relevant, say exactly: \"I don't "
+    "have that information.\" Never invent facts, dates, prices, or "
+    "availability."
 )
 
 
@@ -232,7 +272,10 @@ async def answer(state: AgentState) -> AgentState:
             "status": "done",
             "steps": [step("answer", "ok", grounded=False)],
         }
-    context = "\n\n---\n\n".join(r["text"] for r in ranked)
+    sources = list(dict.fromkeys(r["source"] for r in ranked))
+    context = "\n\n---\n\n".join(
+        f"[source: {r['source']}]\n{r['text']}" for r in ranked
+    )
     try:
         res = await http.post(
             f"{OLLAMA}/v1/chat/completions",
@@ -249,6 +292,7 @@ async def answer(state: AgentState) -> AgentState:
         text = res.json()["choices"][0]["message"]["content"].strip()
         return {
             "answer": text,
+            "sources": sources,
             "status": "done",
             "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL)],
         }
@@ -278,10 +322,10 @@ async def lifespan(app: FastAPI):
     saver = AsyncSqliteSaver(conn)
     _saver = saver
     builder = StateGraph(AgentState)
-    for name, fn in [("scrape", scrape), ("chunk", chunk), ("embed", embed), ("retrieve", retrieve), ("answer", answer), ("finish", _finish)]:
+    for name, fn in [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("retrieve", retrieve), ("answer", answer), ("finish", _finish)]:
         builder.add_node(name, fn)
-    builder.add_edge(START, "scrape")
-    builder.add_edge("scrape", "chunk")
+    builder.add_edge(START, "crawl")
+    builder.add_edge("crawl", "chunk")
     builder.add_edge("chunk", "embed")
     builder.add_edge("embed", "retrieve")
     builder.add_conditional_edges("retrieve", _route, {"answer": "answer", END: "finish"})
@@ -342,10 +386,12 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "status": v.get("status", "running"),
         "url": v.get("url"),
         "question": v.get("question"),
-        "title": v.get("title"),
+        "title": (v.get("pages") or [{}])[0].get("title"),
+        "page_count": len(v.get("pages") or []),
         "steps": v.get("steps", []),
         "chunk_count": len(v.get("chunks") or []),
-        "ranked": [{k: r[k] for k in ("index", "score")} for r in (v.get("ranked") or [])],
+        "ranked": [{k: r.get(k) for k in ("index", "score", "source")} for r in (v.get("ranked") or [])],
+        "sources": v.get("sources") or [],
         "answer": v.get("answer"),
         "error": v.get("error"),
     }
