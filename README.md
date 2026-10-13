@@ -37,7 +37,7 @@ docker compose up -d
 ```
 
 First boot pulls images (~4 GB) and then the ollama models
-(~2.5 GB: `llama3.2:3b` + `nomic-embed-text`). Watch progress with
+(~5 GB: `llama3.1:8b` + `nomic-embed-text`). Watch progress with
 `docker compose logs -f ollama-pull`.
 
 ## Endpoints
@@ -85,7 +85,7 @@ docker compose --profile test run --rm e2e
 ```
 ┌─────────────┐
 │ ollama      │ ◄────── http://ollama:11434 (+ OpenAI-compat /v1)
-│ llama3.2 +  │
+│ llama3.1:8b │
 │ nomic-embed │
 └──────┬──────┘
        │ OLLAMA_BASE_URL (firecrawl's LLM features point here)
@@ -123,7 +123,7 @@ Ollama chat (OpenAI-compatible):
 
 ```bash
 curl http://localhost:11435/v1/chat/completions -d '{
-  "model":"llama3.2:3b",
+  "model":"llama3.1:8b",
   "messages":[{"role":"user","content":"hello"}]}'
 ```
 
