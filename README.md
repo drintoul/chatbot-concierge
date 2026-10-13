@@ -27,7 +27,8 @@ bottom-right over the host page and opens the concierge popup.*
 ![Audit tab](docs/audit-tab.png)
 
 *④ Audit — every visitor question logged with its outcome (grounded /
-handoff / error), latency, answer, and sources; filterable per site.*
+handoff / error), latency, answer, and sources; filterable per site and
+exportable to PDF (`audit-{domain}-{YYYY-MM}.pdf` via `GET /audit/pdf`).*
 
 ## Quick start
 
