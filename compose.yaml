@@ -1,0 +1,212 @@
+name: hustle-stack
+
+# Self-contained dev/demo stack: Ollama (LLM+embeddings), a standalone
+# Playwright browser server, and the full self-hosted Firecrawl pipeline.
+# Nothing on the host is required except Docker — no local ollama, node, or
+# playwright installs are touched. Move to a VPS by copying this file plus
+# .env; all state lives in named volumes.
+
+# Shared environment for the firecrawl services (mirrors upstream
+# docker-compose.yaml contract, image-only variant).
+x-fc-env: &fc-env
+  REDIS_URL: redis://firecrawl-redis:6379
+  REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+  PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+  # NB: user/db must stay "postgres" — nuq-postgres's init SQL (pg_cron) is
+  # bound to that database and fails under a custom POSTGRES_DB.
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD:-firecrawl_dev_password}
+  POSTGRES_DB: postgres
+  POSTGRES_HOST: firecrawl-postgres
+  POSTGRES_PORT: "5432"
+  # No API key on the trusted local bridge network. Set USE_DB_AUTHENTICATION
+  # plus real credentials before exposing this beyond localhost.
+  USE_DB_AUTHENTICATION: "false"
+  NUM_WORKERS_PER_QUEUE: ${FC_NUM_WORKERS:-4}
+  CRAWL_CONCURRENT_REQUESTS: ${FC_CONCURRENT_REQUESTS:-5}
+  MAX_CONCURRENT_JOBS: ${FC_MAX_JOBS:-3}
+  BROWSER_POOL_SIZE: ${FC_BROWSER_POOL:-3}
+  # Point Firecrawl's LLM features (extract, etc.) at the project's Ollama.
+  OLLAMA_BASE_URL: http://ollama:11434
+  MODEL_NAME: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+  MODEL_EMBEDDING_NAME: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+  LOGGING_LEVEL: ${FC_LOG_LEVEL:-info}
+  ENV: local
+
+services:
+  # ------------------------------------------------------------------ ollama
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      # Host's own ollama usually squats on 11434 — publish on 11435 instead.
+      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "ps"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    # To use a host NVIDIA GPU, install nvidia-container-toolkit and add:
+    #   deploy:
+    #     resources:
+    #       reservations:
+    #         devices:
+    #           - driver: nvidia
+    #             count: all
+    #             capabilities: [gpu]
+
+  # One-shot: pulls the configured models on first boot, then exits.
+  # `ollama pull` is idempotent — re-running `up` is a fast no-op afterwards.
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+    entrypoint: ["sh", "-c"]
+    command:
+      - 'ollama pull "$$OLLAMA_CHAT_MODEL" && ollama pull "$$OLLAMA_EMBED_MODEL"'
+    restart: "no"
+
+  # ------------------------------------------------------------- playwright
+  # Shared Chromium browser server for dev/demos. Clients connect via
+  # playwright's remote protocol:
+  #   chromium.connect("ws://localhost:3100/browser")
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble
+    command: npx playwright launch-server --browser chromium --config /etc/playwright/server.json
+    volumes:
+      - ./infra/playwright-server.json:/etc/playwright/server.json:ro
+    ports:
+      - "127.0.0.1:${PLAYWRIGHT_PORT:-3100}:3000"
+    shm_size: "1gb"   # chromium crashes on the default 64MB /dev/shm
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/3000'"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+
+  # ------------------------------------------------------------- firecrawl
+  firecrawl-api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    environment:
+      <<: *fc-env
+      HOST: "0.0.0.0"
+      PORT: "3002"
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: "120000"
+    command: node dist/src/harness.js --start-docker
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-postgres:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FIRECRAWL_PORT:-3002}:3002"
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    healthcheck:
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://localhost:3002/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  # Firecrawl's own page-render microservice (its /scrape backend). Internal
+  # only — distinct from the standalone `playwright` service above, which is
+  # a generic browser endpoint for your own tooling.
+  firecrawl-playwright:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    environment:
+      PORT: "3000"
+      BLOCK_MEDIA: ${FC_BLOCK_MEDIA:-true}
+      MAX_CONCURRENT_PAGES: ${FC_CONCURRENT_REQUESTS:-5}
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
+  firecrawl-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--bind", "0.0.0.0", "--appendonly", "no"]
+    volumes:
+      - fc-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  firecrawl-rabbitmq:
+    image: rabbitmq:3-management-alpine
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # Firecrawl's Nuq queue/store database (custom postgres image).
+  firecrawl-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD:-firecrawl_dev_password}
+      POSTGRES_DB: postgres
+    volumes:
+      - fc-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------- e2e
+  # On-demand containerized test runner — zero host tooling needed:
+  #   docker compose --profile test run --rm e2e
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.64.0-noble
+    profiles: ["test"]
+    working_dir: /work
+    volumes:
+      - ./tests:/work
+    environment:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      PLAYWRIGHT_WS_URL: ws://playwright:3000/browser
+      FIRECRAWL_URL: http://firecrawl-api:3002
+      OLLAMA_URL: http://ollama:11434
+    depends_on:
+      playwright:
+        condition: service_healthy
+      firecrawl-api:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+    command: sh -c "npm install --no-audit --no-fund --silent && npx playwright test"
+
+volumes:
+  ollama-models:
+  fc-redis-data:
+  fc-pg-data:
