@@ -29,6 +29,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, HttpUrl
@@ -53,6 +54,7 @@ _query_graph = None
 _saver: AsyncSqliteSaver = None
 _db: aiosqlite.Connection = None  # corpus store (same file as checkpoints)
 _pending: set[str] = set()
+_progress: dict[str, dict[str, Any]] = {}  # run_id -> live in-node progress for /runs
 
 
 class ChatbotConciergeState(TypedDict, total=False):
@@ -96,18 +98,20 @@ def bail(state: ChatbotConciergeState) -> bool:
 
 # ------------------------------------------------------- index-graph nodes
 
-async def crawl(state: ChatbotConciergeState) -> ChatbotConciergeState:
+async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
     """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
     hops from the seed URL up to CRAWL_LIMIT pages."""
     if bail(state):
         return {}
+    run_id = config["configurable"]["thread_id"]
+    limit = state.get("crawl_limit") or CRAWL_LIMIT
     t0 = time.time()
     try:
         res = await http.post(
             f"{FIRECRAWL}/v2/crawl",
             json={
                 "url": state["url"],
-                "limit": state.get("crawl_limit") or CRAWL_LIMIT,
+                "limit": limit,
                 "maxDiscoveryDepth": state.get("crawl_depth") or CRAWL_DEPTH,
                 "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
             },
@@ -124,6 +128,11 @@ async def crawl(state: ChatbotConciergeState) -> ChatbotConciergeState:
             poll = await http.get(f"{FIRECRAWL}/v2/crawl/{job_id}")
             poll.raise_for_status()
             job = poll.json()
+            _progress[run_id] = {
+                "node": "crawl",
+                "done": job.get("completed") or 0,
+                "total": job.get("total") or limit,
+            }
             if job.get("status") == "completed":
                 break
             if job.get("status") in ("failed", "cancelled") or time.time() > deadline:
@@ -211,17 +220,25 @@ async def chunk(state: ChatbotConciergeState) -> ChatbotConciergeState:
     }
 
 
-async def embed(state: ChatbotConciergeState) -> ChatbotConciergeState:
+EMBED_BATCH = 40  # chunks per ollama call — also the progress granularity
+
+
+async def embed(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
     if bail(state):
         return {}
+    run_id = config["configurable"]["thread_id"]
+    chunks = state["chunks"]
     t0 = time.time()
     try:
-        res = await http.post(
-            f"{OLLAMA}/v1/embeddings",
-            json={"model": EMBED_MODEL, "input": [c["text"] for c in state["chunks"]]},
-        )
-        res.raise_for_status()
-        embs = [d["embedding"] for d in res.json()["data"]]
+        embs = []
+        for i in range(0, len(chunks), EMBED_BATCH):
+            res = await http.post(
+                f"{OLLAMA}/v1/embeddings",
+                json={"model": EMBED_MODEL, "input": [c["text"] for c in chunks[i : i + EMBED_BATCH]]},
+            )
+            res.raise_for_status()
+            embs += [d["embedding"] for d in res.json()["data"]]
+            _progress[run_id] = {"node": "embed", "done": len(embs), "total": len(chunks)}
         return {
             "embeddings": embs,
             "steps": [step("embed", "ok", ms=round((time.time() - t0) * 1000), count=len(embs), model=EMBED_MODEL)],
@@ -681,6 +698,7 @@ async def _run(graph, run_id: str, initial: ChatbotConciergeState) -> None:
             pass
     finally:
         _pending.discard(run_id)
+        _progress.pop(run_id, None)
         await _audit(graph, run_id, cfg)
 
 
@@ -797,6 +815,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "answer": v.get("answer"),
         "grounded": v.get("grounded"),
         "error": v.get("error"),
+        "progress": _progress.get(run_id),
     }
 
 

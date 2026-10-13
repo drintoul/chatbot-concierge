@@ -324,7 +324,9 @@ function makeRunner(statusEl, stepsEl, outEl) {
     statusEl.textContent = "starting";
     let rendered = 0;
     const st = await postAndPoll(endpoint, body, s => {
-      statusEl.textContent = "running — " + (s.steps?.length || 0) + " node(s) complete";
+      statusEl.textContent = "running — " + (s.progress
+        ? `${s.progress.node}: ${s.progress.done}/${s.progress.total}`
+        : (s.steps?.length || 0) + " node(s) complete");
       for (; rendered < (s.steps?.length || 0); rendered++) {
         const s2 = s.steps[rendered], el = document.createElement("div");
         el.className = "step";
