@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hustle-agent — LangGraph demo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8ee;
+    display: flex; justify-content: center; padding: 40px 16px;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8b93a5; font-size: 13px; margin-bottom: 24px; }
+  form { display: grid; gap: 10px; margin-bottom: 28px; }
+  label { font-size: 12px; color: #8b93a5; text-transform: uppercase; letter-spacing: .05em; }
+  input {
+    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2f3a;
+    background: #171a21; color: #e6e8ee; font: inherit;
+  }
+  input:focus { outline: none; border-color: #4f8cff; }
+  button {
+    padding: 10px 18px; border: 0; border-radius: 8px; background: #4f8cff;
+    color: #fff; font: inherit; font-weight: 600; cursor: pointer; justify-self: start;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .steps { display: grid; gap: 8px; }
+  .step {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px;
+    animation: in .25s ease;
+  }
+  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
+  .node { font-weight: 600; width: 90px; }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .ok { background: #14361f; color: #5fd68a; }
+  .skipped { background: #33301a; color: #d8c25f; }
+  .failed { background: #3a1d1d; color: #f08888; }
+  .detail { color: #8b93a5; font-size: 13px; }
+  .card {
+    margin-top: 16px; padding: 16px; background: #171a21;
+    border: 1px solid #2a2f3a; border-radius: 8px; white-space: pre-wrap;
+  }
+  .card h2 { font-size: 13px; color: #8b93a5; text-transform: uppercase;
+    letter-spacing: .05em; margin: 0 0 8px; }
+  .err { border-color: #5c2c2c; }
+  #status { color: #8b93a5; font-size: 13px; margin-bottom: 10px; min-height: 20px; }
+  .spinner::after { content: "…"; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>hustle-agent</h1>
+  <div class="sub">Deterministic LangGraph pipeline — scrape → chunk → embed → retrieve → answer. Every node checkpoints; watch it progress below.</div>
+
+  <form id="f">
+    <div>
+      <label for="url">Page to scrape</label>
+      <input id="url" value="https://example.com" required>
+    </div>
+    <div>
+      <label for="q">Question <span style="text-transform:none">(optional — leave blank to just index)</span></label>
+      <input id="q" value="What is this domain used for?">
+    </div>
+    <button id="go" type="submit">Run pipeline</button>
+  </form>
+
+  <div id="status"></div>
+  <div id="steps" class="steps"></div>
+  <div id="out"></div>
+
+<script>
+const f = document.getElementById("f"), go = document.getElementById("go"),
+      statusEl = document.getElementById("status"), stepsEl = document.getElementById("steps"),
+      outEl = document.getElementById("out");
+let rendered = 0;
+
+const fmt = (d) =>
+  [d.ms != null ? d.ms + "ms" : null, d.chars != null ? d.chars + " chars" : null,
+   d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
+   d.best != null ? "best " + d.best : null, d.model || null, d.reason || null]
+    .filter(Boolean).join(" · ");
+
+function draw(steps) {
+  for (; rendered < steps.length; rendered++) {
+    const s = steps[rendered], el = document.createElement("div");
+    el.className = "step";
+    el.innerHTML =
+      `<span class="node"></span><span class="pill ${s.status}"></span><span class="detail"></span>`;
+    el.children[0].textContent = s.node;
+    el.children[1].textContent = s.status;
+    el.children[2].textContent = fmt(s);
+    stepsEl.appendChild(el);
+  }
+}
+
+function finish(state) {
+  statusEl.className = "";
+  statusEl.textContent = state.status === "done" ? "done" : "failed: " + (state.error || "unknown");
+  const card = document.createElement("div");
+  card.className = "card" + (state.status === "failed" ? " err" : "");
+  card.innerHTML = "<h2></h2><div class='body'></div>";
+  card.querySelector("h2").textContent = state.status === "failed" ? "error" : "answer";
+  card.querySelector(".body").textContent =
+    state.status === "failed" ? state.error || "unknown error"
+    : (state.answer || "(indexing run — no question asked)");
+  outEl.appendChild(card);
+}
+
+async function poll(id) {
+  for (;;) {
+    const res = await fetch("/runs/" + id);
+    const state = await res.json();
+    statusEl.className = "spinner";
+    statusEl.textContent = "running — " + (state.steps?.length || 0) + " node(s) complete";
+    draw(state.steps || []);
+    if (state.status !== "running") return finish(state);
+    await new Promise(r => setTimeout(r, 900));
+  }
+}
+
+f.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  go.disabled = true; rendered = 0;
+  stepsEl.innerHTML = ""; outEl.innerHTML = "";
+  statusEl.textContent = "starting";
+  try {
+    const res = await fetch("/runs", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        url: document.getElementById("url").value,
+        question: document.getElementById("q").value || null,
+      }),
+    });
+    const { run_id } = await res.json();
+    await poll(run_id);
+  } catch (err) {
+    statusEl.className = "";
+    statusEl.textContent = "request failed: " + err;
+  } finally {
+    go.disabled = false;
+  }
+});
+</script>
+</main>
+</body>
+</html>

@@ -53,6 +53,13 @@ async function pollRun(ctx: Awaited<ReturnType<typeof request.newContext>>, id: 
   throw new Error("run did not finish in 120s");
 }
 
+test("agent serves the demo page", async () => {
+  const ctx = await request.newContext();
+  const res = await ctx.get(`${AGENT}/`);
+  expect(res.ok()).toBeTruthy();
+  expect(await res.text()).toContain("hustle-agent");
+});
+
 test("agent runs deterministic scrape→answer pipeline", async () => {
   test.setTimeout(180_000);
   const ctx = await request.newContext();

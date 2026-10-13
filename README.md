@@ -29,7 +29,7 @@ First boot pulls images (~4 GB) and then the ollama models
 | --------- | --------------------------- | ------------------------------ |
 | Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
 | Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/crawl` |
-| Agent     | `http://localhost:8000`     | `POST /runs`, `GET /runs/{id}` |
+| Agent     | `http://localhost:8000`     | Demo UI at `/`, API at `/docs` |
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
 > This project's container publishes on **11435** so the two never conflict.

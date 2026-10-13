@@ -22,6 +22,7 @@ import aiosqlite
 import httpx
 import operator
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, HttpUrl
@@ -288,6 +289,11 @@ async def _run(run_id: str, url: str, question: str | None) -> None:
 @app.get("/health")
 async def health() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/", include_in_schema=False)
+async def index() -> FileResponse:
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 
 @app.post("/runs", status_code=202)
