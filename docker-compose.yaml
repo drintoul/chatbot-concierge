@@ -36,7 +36,7 @@ x-fc-env: &fc-env
 services:
   # ------------------------------------------------------------------ ollama
   ollama:
-    container_name: hustle-stack-ollama
+    container_name: concierge-ollama
     image: ollama/ollama:latest
     volumes:
       - ollama-models:/root/.ollama
@@ -61,7 +61,7 @@ services:
   # One-shot: pulls the configured models on first boot, then exits.
   # `ollama pull` is idempotent — re-running `up` is a fast no-op afterwards.
   ollama-pull:
-    container_name: hustle-stack-ollama-pull
+    container_name: concierge-ollama-pull
     image: ollama/ollama:latest
     depends_on:
       ollama:
@@ -77,7 +77,7 @@ services:
 
   # ------------------------------------------------------------- firecrawl
   firecrawl-api:
-    container_name: hustle-stack-firecrawl-api
+    container_name: concierge-firecrawl-api
     image: ghcr.io/firecrawl/firecrawl:latest
     environment:
       <<: *fc-env
@@ -118,7 +118,7 @@ services:
   # Firecrawl's own page-render microservice (its /scrape backend). Internal
   # only; this is the browser layer — no separate playwright service exists.
   firecrawl-playwright:
-    container_name: hustle-stack-firecrawl-playwright
+    container_name: concierge-firecrawl-playwright
     image: ghcr.io/firecrawl/playwright-service:latest
     environment:
       PORT: "3000"
@@ -129,7 +129,7 @@ services:
     restart: unless-stopped
 
   firecrawl-redis:
-    container_name: hustle-stack-firecrawl-redis
+    container_name: concierge-firecrawl-redis
     image: redis:7-alpine
     command: ["redis-server", "--bind", "0.0.0.0", "--appendonly", "no"]
     volumes:
@@ -142,7 +142,7 @@ services:
     restart: unless-stopped
 
   firecrawl-rabbitmq:
-    container_name: hustle-stack-firecrawl-rabbitmq
+    container_name: concierge-firecrawl-rabbitmq
     image: rabbitmq:3-management-alpine
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
@@ -154,7 +154,7 @@ services:
 
   # Firecrawl's Nuq queue/store database (custom postgres image).
   firecrawl-postgres:
-    container_name: hustle-stack-firecrawl-postgres
+    container_name: concierge-firecrawl-postgres
     image: ghcr.io/firecrawl/nuq-postgres:latest
     environment:
       POSTGRES_USER: postgres
@@ -175,7 +175,7 @@ services:
   #   POST /query: load corpus -> retrieve -> answer (no re-crawl)
   # Poll GET /runs/{id} to watch node-by-node progression; demo UI at /.
   chatbot-concierge:
-    container_name: hustle-stack-chatbot-concierge
+    container_name: concierge
     build:
       context: .
       dockerfile: infra/Dockerfile.chatbot-concierge
@@ -209,7 +209,7 @@ services:
   # On-demand containerized test runner — zero host tooling needed:
   #   docker compose --profile test run --rm e2e
   e2e:
-    container_name: hustle-stack-e2e
+    container_name: concierge-e2e
     image: mcr.microsoft.com/playwright:v1.64.0-noble
     profiles: ["test"]
     working_dir: /work
