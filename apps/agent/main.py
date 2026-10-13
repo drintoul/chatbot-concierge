@@ -98,9 +98,35 @@ async def scrape(state: AgentState) -> AgentState:
         return fail(state, "scrape", e)
 
 
+import re
+
+_IMAGE_LINE = re.compile(r"^\s*!\[.*\]\(.*?\)\s*\\?\s*$")
+_LINK_LINE = re.compile(r"^\s*\[.*\]\(.*?\)\s*\\?\s*$")
+_BOILERPLATE = re.compile(
+    r"consent management|cookies?|all rights reserved|powered by|newsletter|"
+    r"privacy policy|terms of (service|use)|accept all|skip to (main )?(content|nav)",
+    re.I,
+)
+
+
+def _clean(para: str) -> str:
+    """Drop image-only/link-only lines; returns '' for boilerplate/nav."""
+    lines = [
+        ln
+        for ln in para.splitlines()
+        if not _IMAGE_LINE.match(ln) and not _LINK_LINE.match(ln)
+    ]
+    text = "\n".join(lines).strip()
+    # Short paragraphs stay — "$275 per night +" and "Sundays - Thursdays
+    # only" are exactly the qualifiers that must survive chunking.
+    if not text or _BOILERPLATE.search(text):
+        return ""
+    return text
+
+
 def _chunk(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
-    """Deterministic paragraph-aware chunker."""
-    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    """Deterministic paragraph-aware chunker with boilerplate stripping."""
+    paras = [c for p in text.split("\n\n") if (c := _clean(p))]
     chunks, cur = [], ""
     for p in paras:
         if len(cur) + len(p) + 2 <= size:
@@ -186,9 +212,12 @@ async def retrieve(state: AgentState) -> AgentState:
 SYSTEM_PROMPT = (
     "You answer questions using ONLY the supplied scraped-page context. "
     "If the context contains relevant information, summarize it in 1-3 "
-    "sentences, sticking strictly to what the context states. If the context "
-    "contains nothing relevant, say exactly: \"I don't have that "
-    "information.\" Never invent facts, dates, prices, or availability."
+    "sentences, sticking strictly to what the context states. Preserve "
+    "pricing and availability qualifiers exactly as written (per person, "
+    "per night, from/+ pricing, taxes, gratuities, minimums, day or date "
+    "restrictions). If the context contains nothing relevant, say exactly: "
+    "\"I don't have that information.\" Never invent facts, dates, prices, "
+    "or availability."
 )
 
 
