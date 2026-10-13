@@ -158,6 +158,10 @@
         <label for="i-phone">Contact phone <span style="text-transform:none">(optional — shown when the concierge can't answer)</span></label>
         <input id="i-phone" type="tel" placeholder="(604) 555-1234">
       </div>
+      <div>
+        <label for="i-email">Contact email <span style="text-transform:none">(optional — same)</span></label>
+        <input id="i-email" type="email" placeholder="stay@thelodge.com">
+      </div>
       <button class="cta" type="submit">Index site</button>
       <div class="hint">One-time per site: crawl → chunk → embed → store. ~1 min. Re-run anytime to refresh.</div>
     </form>
@@ -342,6 +346,7 @@ async function loadSites() {
     row.innerHTML = `<span class="u">${s.url}</span>` +
       `<span class="m">${s.chunk_count} chunks · ${s.pages?.length || "?"} pages` +
       (s.phone ? ` · ${s.phone}` : "") +
+      (s.email ? ` · ${s.email}` : "") +
       ` · ${new Date(s.indexed_at*1000).toLocaleTimeString()}</span>` +
       `<span class="tw">tree ▾</span>`;
     const treeHolder = document.createElement("div");
@@ -374,6 +379,8 @@ $("f-index").addEventListener("submit", async (e) => {
     if (lim > 0) body.limit = lim;
     const ph = $("i-phone").value.trim();
     if (ph) body.phone = ph;
+    const em = $("i-email").value.trim();
+    if (em) body.email = em;
     const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", body);
     if (st.status === "done") {
       const c = document.createElement("div");

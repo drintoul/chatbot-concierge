@@ -61,7 +61,8 @@ class AgentState(TypedDict, total=False):
     crawl_limit: int
     crawl_depth: int
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
-    phone: str | None                    # best-guess contact number for handoff
+    phone: str | None                    # operator-provided contact number
+    email: str | None                    # operator-provided contact email
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
     ranked: list[dict[str, Any]]
@@ -240,11 +241,13 @@ async def store(state: AgentState) -> AgentState:
         return {}
     url = _canon(state["url"])
     await _db.execute(
-        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, indexed_at)
-           VALUES(?,?,?,?,?,?,?)
+        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email, indexed_at)
+           VALUES(?,?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
-             embeddings=excluded.embeddings, phone=excluded.phone,
+             embeddings=excluded.embeddings,
+             phone=COALESCE(excluded.phone, phone),
+             email=COALESCE(excluded.email, email),
              indexed_at=excluded.indexed_at""",
         (
             url,
@@ -253,6 +256,7 @@ async def store(state: AgentState) -> AgentState:
             json.dumps(state["chunks"]),
             json.dumps(state["embeddings"]),
             state.get("phone"),
+            state.get("email"),
             time.time(),
         ),
     )
@@ -271,7 +275,7 @@ async def load(state: AgentState) -> AgentState:
         return {}
     url = _canon(state["url"])
     async with _db.execute(
-        "SELECT chunks, embeddings, phone FROM corpora WHERE url=?", (url,)
+        "SELECT chunks, embeddings, phone, email FROM corpora WHERE url=?", (url,)
     ) as cur:
         row = await cur.fetchone()
     if not row:
@@ -280,6 +284,7 @@ async def load(state: AgentState) -> AgentState:
         "chunks": json.loads(row[0]),
         "embeddings": json.loads(row[1]),
         "phone": row[2],
+        "email": row[3],
         "steps": [step("load", "ok", url=url)],
     }
 
@@ -429,11 +434,18 @@ def _is_refusal(text: str) -> bool:
     return head.startswith(REFUSAL) or bool(_SOFT_REFUSAL.search(head))
 
 
-def _handoff(phone: str | None) -> str:
-    at = f" at {phone}" if phone else ""
+def _handoff(phone: str | None, email: str | None) -> str:
+    if phone and email:
+        contact = f"Please give us a call at {phone} or email us at {email}"
+    elif phone:
+        contact = f"Please give us a call at {phone}"
+    elif email:
+        contact = f"Please email us at {email}"
+    else:
+        contact = "Please give us a call"
     return (
         "I'm sorry — I couldn't find that on our website. "
-        f"Please give us a call{at} and our team will be happy to help."
+        f"{contact} and our team will be happy to help."
     )
 
 
@@ -513,14 +525,14 @@ async def verify(state: AgentState) -> AgentState:
             "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=False, **detail)],
         }
         if not tries_left:
-            out.update(answer=_handoff(state.get("phone")), status="done")
+            out.update(answer=_handoff(state.get("phone"), state.get("email")), status="done")
         return out
 
     if not cand:
         # No candidate at all — nothing left to try (empty ranked or the
         # no-evidence fast path). Terminal: always hand off here.
         return {
-            "answer": _handoff(state.get("phone")),
+            "answer": _handoff(state.get("phone"), state.get("email")),
             "status": "done",
             "grounded": False,
             "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=False)],
@@ -583,15 +595,17 @@ async def lifespan(app: FastAPI):
     await _db.execute(
         """CREATE TABLE IF NOT EXISTS corpora(
              url TEXT PRIMARY KEY, title TEXT, pages TEXT,
-             chunks TEXT, embeddings TEXT, phone TEXT, indexed_at REAL)"""
+             chunks TEXT, embeddings TEXT, phone TEXT, email TEXT,
+             indexed_at REAL)"""
     )
     await _db.commit()
-    # Pre-phone-schema databases: add the column if missing.
+    # Older databases: add any columns introduced after first boot.
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
-    if "phone" not in cols:
-        await _db.execute("ALTER TABLE corpora ADD COLUMN phone TEXT")
-        await _db.commit()
+    for col in ("phone", "email"):
+        if col not in cols:
+            await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} TEXT")
+    await _db.commit()
 
     _index_graph = _build(
         [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
@@ -613,6 +627,7 @@ class IndexRequest(BaseModel):
     limit: int | None = None  # overrides AGENT_CRAWL_LIMIT when set
     depth: int | None = None  # overrides AGENT_CRAWL_DEPTH when set
     phone: str | None = None  # contact number for handoff answers
+    email: str | None = None  # contact email for handoff answers
 
 
 class QueryRequest(BaseModel):
@@ -657,6 +672,8 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
         initial["crawl_depth"] = req.depth
     if req.phone:
         initial["phone"] = req.phone.strip() or None
+    if req.email:
+        initial["email"] = req.email.strip() or None
     asyncio.create_task(_run(_index_graph, run_id, initial))
     return {"run_id": run_id, "status": "running"}
 
@@ -673,15 +690,16 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
-        "SELECT url, title, pages, json_array_length(chunks), phone, indexed_at"
+        "SELECT url, title, pages, json_array_length(chunks), phone, email, indexed_at"
         " FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunk_count, phone, indexed_at in cur:
+        async for url, title, pages, chunk_count, phone, email, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
                 "chunk_count": chunk_count,
                 "phone": phone,
+                "email": email,
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
@@ -700,6 +718,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "question": v.get("question"),
         "title": (v.get("pages") or [{}])[0].get("title"),
         "phone": v.get("phone"),
+        "email": v.get("email"),
         "page_count": len(v.get("pages") or []),
         "pages": [{k: p.get(k) for k in ("url", "title")} for p in (v.get("pages") or [])],
         "steps": v.get("steps", []),
