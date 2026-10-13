@@ -49,14 +49,15 @@ services:
       timeout: 5s
       retries: 12
     restart: unless-stopped
-    # To use a host NVIDIA GPU, install nvidia-container-toolkit and add:
-    #   deploy:
-    #     resources:
-    #       reservations:
-    #         devices:
-    #           - driver: nvidia
-    #             count: all
-    #             capabilities: [gpu]
+    # GPU 0 = the 3090 (24 GB). The 2070 SUPER (8 GB) handles desktop + other
+    # projects' loads; swap device_ids to ["1"] or count: all to change.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
 
   # One-shot: pulls the configured models on first boot, then exits.
   # `ollama pull` is idempotent — re-running `up` is a fast no-op afterwards.
