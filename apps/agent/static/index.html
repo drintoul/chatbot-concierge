@@ -150,6 +150,10 @@
         <label for="i-url">Site to index (crawls 2 levels deep)</label>
         <input id="i-url" value="https://www.fraserriverlodge.com/" required>
       </div>
+      <div>
+        <label for="i-limit">Max pages <span style="text-transform:none">(blank = default 15 — bump it for larger sites)</span></label>
+        <input id="i-limit" type="number" min="1" max="200" placeholder="15">
+      </div>
       <button class="cta" type="submit">Index site</button>
       <div class="hint">One-time per site: crawl → chunk → embed → store. ~1 min. Re-run anytime to refresh.</div>
     </form>
@@ -347,7 +351,10 @@ $("f-index").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = e.target.querySelector("button"); btn.disabled = true;
   try {
-    const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", { url: $("i-url").value });
+    const body = { url: $("i-url").value };
+    const lim = parseInt($("i-limit").value, 10);
+    if (lim > 0) body.limit = lim;
+    const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", body);
     if (st.status === "done") {
       const c = document.createElement("div");
       c.className = "card";

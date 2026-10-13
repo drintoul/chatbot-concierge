@@ -56,6 +56,8 @@ _pending: set[str] = set()
 class AgentState(TypedDict, total=False):
     url: str
     question: str | None
+    crawl_limit: int
+    crawl_depth: int
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
@@ -94,8 +96,8 @@ async def crawl(state: AgentState) -> AgentState:
             f"{FIRECRAWL}/v2/crawl",
             json={
                 "url": state["url"],
-                "limit": CRAWL_LIMIT,
-                "maxDiscoveryDepth": CRAWL_DEPTH,
+                "limit": state.get("crawl_limit") or CRAWL_LIMIT,
+                "maxDiscoveryDepth": state.get("crawl_depth") or CRAWL_DEPTH,
                 "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
             },
         )
@@ -475,6 +477,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 class IndexRequest(BaseModel):
     url: HttpUrl
+    limit: int | None = None  # overrides AGENT_CRAWL_LIMIT when set
+    depth: int | None = None  # overrides AGENT_CRAWL_DEPTH when set
 
 
 class QueryRequest(BaseModel):
@@ -512,7 +516,12 @@ async def index_page() -> FileResponse:
 async def start_index(req: IndexRequest) -> dict[str, str]:
     run_id = "idx:" + uuid.uuid4().hex
     _pending.add(run_id)
-    asyncio.create_task(_run(_index_graph, run_id, {"url": str(req.url)}))
+    initial: AgentState = {"url": str(req.url)}
+    if req.limit:
+        initial["crawl_limit"] = req.limit
+    if req.depth:
+        initial["crawl_depth"] = req.depth
+    asyncio.create_task(_run(_index_graph, run_id, initial))
     return {"run_id": run_id, "status": "running"}
 
 
