@@ -1,8 +1,10 @@
 # hustle-stack
 
 Self-contained dev/demo stack in one `docker compose up`: **Ollama** (local
-LLM + embeddings) and **Firecrawl** (self-hosted web-scraping API, wired to
-use the project's Ollama for its LLM features). Firecrawl brings its own
+LLM + embeddings), **Firecrawl** (self-hosted web-scraping API, wired to use
+the project's Ollama for its LLM features), and a **LangGraph agent** — a
+deterministic, checkpointed state machine that pipelines scrape → chunk →
+embed → retrieve → answer over those two services. Firecrawl brings its own
 internal Playwright render backend, so JavaScript-heavy pages work with no
 extra setup.
 
@@ -27,6 +29,7 @@ First boot pulls images (~4 GB) and then the ollama models
 | --------- | --------------------------- | ------------------------------ |
 | Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
 | Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/crawl` |
+| Agent     | `http://localhost:8000`     | `POST /runs`, `GET /runs/{id}` |
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
 > This project's container publishes on **11435** so the two never conflict.
@@ -44,6 +47,13 @@ curl http://localhost:11435/api/tags
 curl -s -X POST http://localhost:3002/v2/scrape \
   -H "content-type: application/json" \
   -d '{"url":"https://example.com","formats":["markdown"]}'
+
+# Agent run → returns immediately; poll for node-by-node progression
+curl -s -X POST http://localhost:8000/runs \
+  -H "content-type: application/json" \
+  -d '{"url":"https://example.com","question":"What is this domain used for?"}'
+# {"run_id":"...","status":"running"}
+curl -s http://localhost:8000/runs/<run_id>
 
 # Full containerized test suite (no host tooling needed)
 docker compose --profile test run --rm e2e
@@ -68,7 +78,15 @@ docker compose --profile test run --rm e2e
 │  │  rabbitmq     │
 │  └─ firecrawl-   │      nuq postgres — job/crawl state
 │     postgres     │
-└──────────────────┘
+└────────┬─────────┘
+         │ FIRECRAWL_URL
+┌────────┴─────────┐
+│ agent            │ :8000 — LangGraph state machine (FastAPI).
+│ scrape → chunk → │      Fixed edges, temperature-0 LLM calls, cosine
+│ embed → retrieve │      ranking — deterministic by construction.
+│ → answer         │      Every node checkpoints to SQLite
+└──────────────────┘      (agent-data volume) so each run is an
+                          inspectable state trace, not a one-shot call.
 ```
 
 There is no standalone Playwright service — `firecrawl-playwright` is
@@ -107,9 +125,11 @@ reservations (needs `nvidia-container-toolkit` on the host).
   and keep it that way, or firewall the ports.
 - `USE_DB_AUTHENTICATION=false` means **Firecrawl has no API key** — fine on
   the compose bridge/localhost, not acceptable exposed to the internet.
+- The agent API has no auth either — same rule. Don't publish `:8000`
+  without a proxy layer.
 - Set a real `FC_POSTGRES_PASSWORD` before deploying.
 - Backup: `docker run --rm -v hustle-stack_ollama-models:/v alpine tar cf - /v`
-  (same pattern for `fc-pg-data`, `fc-redis-data`).
+  (same pattern for `fc-pg-data`, `fc-redis-data`, `agent-data`).
 
 ## Limits
 

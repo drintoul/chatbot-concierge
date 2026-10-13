@@ -169,6 +169,42 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # ----------------------------------------------------------------- agent
+  # LangGraph orchestration layer: deterministic, checkpointed pipeline
+  #   scrape (firecrawl) -> chunk -> embed (ollama) -> retrieve -> answer
+  # Every run is a persisted state machine — POST /runs, then poll
+  # GET /runs/{id} to watch node-by-node progression.
+  agent:
+    container_name: hustle-stack-agent
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.agent
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
+      FIRECRAWL_URL: http://firecrawl-api:3002
+      AGENT_DB_PATH: /data/langgraph.db
+    volumes:
+      - agent-data:/data
+    depends_on:
+      firecrawl-api:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${AGENT_PORT}:8080"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
   # ------------------------------------------------------------------- e2e
   # On-demand containerized test runner — zero host tooling needed:
   #   docker compose --profile test run --rm e2e
@@ -184,9 +220,12 @@ services:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       FIRECRAWL_URL: http://firecrawl-api:3002
       OLLAMA_URL: http://ollama:11434
+      AGENT_URL: http://agent:8080
     depends_on:
       firecrawl-api:
         condition: service_started
+      agent:
+        condition: service_healthy
       ollama:
         condition: service_healthy
     command: sh -c "npm install --no-audit --no-fund --silent && npx playwright test"
@@ -195,3 +234,4 @@ volumes:
   ollama-models:
   fc-redis-data:
   fc-pg-data:
+  agent-data:
