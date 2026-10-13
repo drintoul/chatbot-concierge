@@ -1,4 +1,4 @@
-# hustle-stack
+# concierge
 
 Self-contained dev/demo stack in one `docker compose up`: **Ollama** (local
 LLM + embeddings), **Firecrawl** (self-hosted web-scraping API, wired to use
@@ -133,7 +133,7 @@ reservations (needs `nvidia-container-toolkit` on the host).
 - The chatbot-concierge API has no auth either — same rule. Don't publish `:8000`
   without a proxy layer.
 - Set a real `FC_POSTGRES_PASSWORD` before deploying.
-- Backup: `docker run --rm -v hustle-stack_ollama-models:/v alpine tar cf - /v`
+- Backup: `docker run --rm -v concierge_ollama-models:/v alpine tar cf - /v`
   (same pattern for `fc-pg-data`, `fc-redis-data`, `chatbot-concierge-data`).
 
 ## Limits

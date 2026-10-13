@@ -1,4 +1,4 @@
-name: hustle-stack
+name: concierge
 
 # Self-contained dev/demo stack: Ollama (LLM+embeddings) and the full
 # self-hosted Firecrawl pipeline (which brings its own render backend).
