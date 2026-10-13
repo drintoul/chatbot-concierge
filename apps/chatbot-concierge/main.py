@@ -361,6 +361,11 @@ _INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
         re.compile(r"\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b(mon|tue|wed|thu|fri|sat|sun)(day)?\b", re.I),
         0.10,
     ),
+    (
+        re.compile(r"\b(where|location|address|directions|located|find|visit|map)\b", re.I),
+        re.compile(r"\b\d{2,5}\s+[a-z0-9 .]+?\b(rd|st|ave|blvd|dr|ln|lane|way|hwy|highway|road|street|avenue|drive)\b\.?", re.I),
+        0.25,
+    ),
 ]
 
 
