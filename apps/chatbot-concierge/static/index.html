@@ -135,7 +135,6 @@
   #a-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
   #a-head .grow { flex: 1; }
   #a-head label { margin-bottom: 7px; }
-  #a-refresh { padding: 15px 22px; font-size: 15px; align-self: flex-end; }
 </style>
 </head>
 <body>
@@ -224,7 +223,6 @@
         <label for="a-site">Visitor questions for</label>
         <select id="a-site"></select>
       </div>
-      <button class="cta" id="a-refresh" type="button">Refresh</button>
     </div>
     <div id="audit"></div>
   </section>
@@ -236,7 +234,6 @@
         <label>Indexed sites</label>
         <div class="hint">Corpora available to Query and Chatbot — expand a row for its crawl tree.</div>
       </div>
-      <button class="cta" id="s-refresh" type="button">Refresh</button>
     </div>
     <div class="site-list" id="sites"></div>
   </section>
@@ -499,11 +496,7 @@ async function loadAudit() {
     el.appendChild(d);
   }
 }
-$("a-refresh").onclick = loadAudit;
 $("a-site").onchange = loadAudit;
-
-// ---------- workflow 5: sites ----------
-$("s-refresh").onclick = loadSites;
 </script>
 </body>
 </html>
