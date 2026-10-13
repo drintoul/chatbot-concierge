@@ -219,6 +219,15 @@ def _cos(a: list[float], b: list[float]) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
+_PRICE_INTENT = re.compile(
+    r"\b(cost|price|pricing|rates?|fees?|charge|how much|book|pay|stay|per night)\b", re.I
+)
+_PRICE_HINT = re.compile(
+    r"\$\s?\d|\b(per night|per person|per couple|per guest|rates?|from \$|starting)\b", re.I
+)
+_PRICE_BOOST = 0.12
+
+
 async def retrieve(state: AgentState) -> AgentState:
     if bail(state):
         return {}
@@ -232,9 +241,16 @@ async def retrieve(state: AgentState) -> AgentState:
         )
         res.raise_for_status()
         qv = res.json()["data"][0]["embedding"]
+        price_q = bool(_PRICE_INTENT.search(q))
         scored = sorted(
             (
-                {"index": i, "score": _cos(qv, e), "text": c["text"], "source": c["source"]}
+                {
+                    "index": i,
+                    "score": _cos(qv, e)
+                    + (_PRICE_BOOST if price_q and _PRICE_HINT.search(c["text"]) else 0),
+                    "text": c["text"],
+                    "source": c["source"],
+                }
                 for i, (c, e) in enumerate(zip(state["chunks"], state["embeddings"]))
             ),
             key=lambda r: (-r["score"], r["index"]),
@@ -249,15 +265,18 @@ async def retrieve(state: AgentState) -> AgentState:
 
 
 SYSTEM_PROMPT = (
-    "You answer questions using ONLY the supplied scraped-page context. "
-    "If the context mentions any prices, packages, offerings, hours, or "
-    "policies even tangentially related to the question, list each one "
-    "with its qualifiers exactly as written (per person, per night, "
-    "from/+ pricing, taxes, gratuities, minimums, day or date "
-    "restrictions), and say what the context does not cover. Only if the "
-    "context contains nothing at all relevant, say exactly: \"I don't "
-    "have that information.\" Never invent facts, dates, prices, or "
-    "availability."
+    "You are the site's concierge answering a visitor directly, using "
+    "ONLY the supplied scraped-page context. Speak plainly in second "
+    "person — never mention \"the context\", \"the page\", or that you "
+    "are reading from a source. If the context mentions any prices, "
+    "packages, offerings, hours, or policies even tangentially related "
+    "to the question, list each one with its qualifiers exactly as "
+    "written (per person, per night, from/+ pricing, taxes, gratuities, "
+    "minimums, day or date restrictions). If something asked about isn't "
+    "covered, say so plainly (\"we don't publish general nightly "
+    "rates\"), not as a citation. Only if nothing relevant exists, say "
+    "exactly: \"I don't have that information.\" Never invent facts, "
+    "dates, prices, or availability."
 )
 
 
