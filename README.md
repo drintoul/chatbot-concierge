@@ -48,11 +48,15 @@ curl -s -X POST http://localhost:3002/v2/scrape \
   -H "content-type: application/json" \
   -d '{"url":"https://example.com","formats":["markdown"]}'
 
-# Agent run → returns immediately; poll for node-by-node progression
-curl -s -X POST http://localhost:8000/runs \
+# Agent: index a site once (slow, ~1 min), then query it fast forever
+curl -s -X POST http://localhost:8000/index \
   -H "content-type: application/json" \
-  -d '{"url":"https://example.com","question":"What is this domain used for?"}'
-# {"run_id":"...","status":"running"}
+  -d '{"url":"https://example.com"}'
+curl -s http://localhost:8000/sites
+
+curl -s -X POST http://localhost:8000/query \
+  -H "content-type: application/json" \
+  -d '{"url":"https://example.com/","question":"What is this domain used for?"}'
 curl -s http://localhost:8000/runs/<run_id>
 
 # Full containerized test suite (no host tooling needed)
@@ -81,16 +85,13 @@ docker compose --profile test run --rm e2e
 └────────┬─────────┘
          │ FIRECRAWL_URL
 ┌────────┴─────────┐
-│ agent            │ :8000 — LangGraph state machine (FastAPI).
-│ crawl → chunk →  │      Fixed edges, temperature-0 LLM calls, cosine
-│ embed → retrieve │      ranking — deterministic by construction.
-│ → answer         │      Crawls 2 levels / 15 pages via firecrawl
-└──────────────────┘      /v2/crawl, keeps a source URL per chunk, and
-                          cites sources in answers. Every node checkpoints
-                          to SQLite (agent-data volume) — each run is an
-                          inspectable state trace, not a one-shot call.
-                          Tune via AGENT_CRAWL_LIMIT / AGENT_CRAWL_DEPTH /
-                          AGENT_CRAWL_TIMEOUT env vars.
+│ agent            │ :8000 — two checkpointed LangGraph workflows:
+│ index: crawl →   │      index (crawl→chunk→embed→store) builds a
+│ chunk → embed →  │      persistent corpus per site; query
+│ store            │      (load→retrieve→answer) reuses it — no
+│ query: load →    │      re-crawl per question. Demo UI at /.
+│ retrieve → answer│      Tune via AGENT_CRAWL_LIMIT / _DEPTH /
+└──────────────────┘      _TIMEOUT env vars.
 ```
 
 There is no standalone Playwright service — `firecrawl-playwright` is

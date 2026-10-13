@@ -1,17 +1,20 @@
-"""Deterministic LangGraph agent service.
+"""Deterministic LangGraph agent service — two checkpointed workflows.
 
-Pipeline: crawl (firecrawl, 2 levels) -> chunk -> embed (ollama) -> retrieve
--> answer, with per-chunk source URLs so answers cite the page they came from.
-Every edge is fixed code — the LLM never decides control flow. The whole run
-is checkpointed to SQLite (langgraph-checkpoint-sqlite), so GET /runs/{id}
-returns the persisted state at any point: each node appends to `steps`,
-giving you stateful, inspectable progression through the process.
+index:  crawl (firecrawl, N levels) -> chunk -> embed -> store corpus
+query:  load corpus -> retrieve -> answer
 
-Determinism: temperature=0 LLM calls, deterministic chunker, pure-math
-cosine ranking, fixed prompts. Same inputs -> same outputs.
+Indexing a site is the slow part (~1 min): crawl, chunk, embed, then persist
+the corpus in SQLite. Asking questions is fast (~seconds–40s): retrieval and
+a single-chunk LLM call against the stored corpus — no re-crawl per question.
+
+Every edge is fixed code — the LLM never decides control flow. All runs are
+checkpointed to SQLite (langgraph-checkpoint-sqlite), so GET /runs/{id}
+exposes each node's progression. Determinism: temperature-0 calls,
+deterministic chunker, pure-math hybrid ranking, fixed prompts.
 """
 
 import asyncio
+import json
 import math
 import os
 import time
@@ -24,6 +27,7 @@ import httpx
 import operator
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, HttpUrl
@@ -36,14 +40,17 @@ DB_PATH = os.environ.get("AGENT_DB_PATH", "/data/langgraph.db")
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 ANSWER_TRIES = 3  # single-chunk answer attempts before genuine refusal
-CRAWL_LIMIT = int(os.environ.get("AGENT_CRAWL_LIMIT", "15"))  # max pages per run
-CRAWL_DEPTH = int(os.environ.get("AGENT_CRAWL_DEPTH", "2"))   # link hops from seed
+CRAWL_LIMIT = int(os.environ.get("AGENT_CRAWL_LIMIT", "15"))
+CRAWL_DEPTH = int(os.environ.get("AGENT_CRAWL_DEPTH", "2"))
 CRAWL_TIMEOUT_S = float(os.environ.get("AGENT_CRAWL_TIMEOUT", "300"))
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
-_graph = None
+_index_graph = None
+_query_graph = None
 _saver = None
-_pending: set[str] = set()  # run_ids accepted but not yet checkpointed
+_db: aiosqlite.Connection = None  # corpus store (same file as checkpoints)
+_pending: set[str] = set()
 
 
 class AgentState(TypedDict, total=False):
@@ -52,11 +59,10 @@ class AgentState(TypedDict, total=False):
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
-    ranked: list[dict[str, Any]]         # [{index, score, text, source}]
-    sources: list[str]                   # source URLs cited by the answer
+    ranked: list[dict[str, Any]]
+    sources: list[str]
     answer: str | None
-    # operator.add reducer: every node appends a trace entry → visible
-    # progression of the run inside the checkpoint.
+    # operator.add reducer: every node appends a trace entry.
     steps: Annotated[list[dict[str, Any]], operator.add]
     status: Literal["running", "done", "failed"]
     error: str | None
@@ -75,7 +81,7 @@ def bail(state: AgentState) -> bool:
     return state.get("status") == "failed"
 
 
-# ----------------------------------------------------------------- nodes
+# ------------------------------------------------------- index-graph nodes
 
 async def crawl(state: AgentState) -> AgentState:
     """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
@@ -213,6 +219,53 @@ async def embed(state: AgentState) -> AgentState:
         return fail(state, "embed", e)
 
 
+async def store(state: AgentState) -> AgentState:
+    """Persist the corpus so query runs reuse it — no re-crawl per question."""
+    if bail(state):
+        return {}
+    url = state["url"].rstrip("/") + "/"
+    await _db.execute(
+        """INSERT INTO corpora(url, title, pages, chunks, embeddings, indexed_at)
+           VALUES(?,?,?,?,?,?)
+           ON CONFLICT(url) DO UPDATE SET
+             title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
+             embeddings=excluded.embeddings, indexed_at=excluded.indexed_at""",
+        (
+            url,
+            (state.get("pages") or [{}])[0].get("title"),
+            json.dumps([{k: p[k] for k in ("url", "title")} for p in state.get("pages", [])]),
+            json.dumps(state["chunks"]),
+            json.dumps(state["embeddings"]),
+            time.time(),
+        ),
+    )
+    await _db.commit()
+    return {
+        "status": "done",
+        "steps": [step("store", "ok", url=url, chunks=len(state["chunks"]))],
+    }
+
+
+# ------------------------------------------------------- query-graph nodes
+
+async def load(state: AgentState) -> AgentState:
+    """Pull the persisted corpus for this URL into state."""
+    if bail(state):
+        return {}
+    url = state["url"].rstrip("/") + "/"
+    async with _db.execute(
+        "SELECT chunks, embeddings FROM corpora WHERE url=?", (url,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return fail(state, "load", f"site not indexed — run the Index workflow first: {url}")
+    return {
+        "chunks": json.loads(row[0]),
+        "embeddings": json.loads(row[1]),
+        "steps": [step("load", "ok", url=url)],
+    }
+
+
 def _cos(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
@@ -262,10 +315,8 @@ def _lexical_score(q_terms: set[str], text: str, idf: dict[str, float]) -> float
 async def retrieve(state: AgentState) -> AgentState:
     if bail(state):
         return {}
-    q = state.get("question")
-    if not q:
-        return {"steps": [step("retrieve", "skipped", reason="no_question")]}
     try:
+        q = state["question"]
         res = await http.post(
             f"{OLLAMA}/v1/embeddings",
             json={"model": EMBED_MODEL, "input": [q]},
@@ -290,17 +341,11 @@ async def retrieve(state: AgentState) -> AgentState:
 
         scored = sorted(
             (
-                {
-                    "index": i,
-                    "score": score(c, e),
-                    "text": c["text"],
-                    "source": c["source"],
-                }
+                {"index": i, "score": score(c, e), "text": c["text"], "source": c["source"]}
                 for i, (c, e) in enumerate(zip(state["chunks"], state["embeddings"]))
             ),
             key=lambda r: (-r["score"], r["index"]),
         )
-
         ranked = [r for r in scored if r["score"] >= MIN_SIMILARITY][:TOP_K]
         return {
             "ranked": ranked,
@@ -373,61 +418,74 @@ async def answer(state: AgentState) -> AgentState:
     }
 
 
-def _route(state: AgentState) -> str:
-    if bail(state):
-        return END
-    return "answer" if state.get("question") else END
-
-
 def _finish(state: AgentState) -> AgentState:
     if bail(state):
         return {}
     return {"status": "done"}
 
 
-# ----------------------------------------------------------------- app
+# ------------------------------------------------------------------- app
+
+def _build(nodes: list[tuple[str, Any]], edges: list[tuple[str, str]]) -> Any:
+    builder = StateGraph(AgentState)
+    for name, fn in nodes:
+        builder.add_node(name, fn)
+    prev = START
+    for src, dst in edges:
+        builder.add_edge(src, dst)
+    builder.add_edge("finish", END)
+    return builder.compile(checkpointer=_saver)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _graph, _saver
+    global _index_graph, _query_graph, _saver, _db
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = await aiosqlite.connect(DB_PATH)
-    saver = AsyncSqliteSaver(conn)
-    _saver = saver
-    builder = StateGraph(AgentState)
-    for name, fn in [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("retrieve", retrieve), ("answer", answer), ("finish", _finish)]:
-        builder.add_node(name, fn)
-    builder.add_edge(START, "crawl")
-    builder.add_edge("crawl", "chunk")
-    builder.add_edge("chunk", "embed")
-    builder.add_edge("embed", "retrieve")
-    builder.add_conditional_edges("retrieve", _route, {"answer": "answer", END: "finish"})
-    builder.add_edge("answer", "finish")
-    builder.add_edge("finish", END)
-    _graph = builder.compile(checkpointer=saver)
+    _saver = AsyncSqliteSaver(conn)
+    _db = await aiosqlite.connect(DB_PATH)
+    await _db.execute(
+        """CREATE TABLE IF NOT EXISTS corpora(
+             url TEXT PRIMARY KEY, title TEXT, pages TEXT,
+             chunks TEXT, embeddings TEXT, indexed_at REAL)"""
+    )
+    await _db.commit()
+
+    _index_graph = _build(
+        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store), ("finish", _finish)],
+        [(START, "crawl"), ("crawl", "chunk"), ("chunk", "embed"), ("embed", "store"), ("store", "finish")],
+    )
+    _query_graph = _build(
+        [("load", load), ("retrieve", retrieve), ("answer", answer), ("finish", _finish)],
+        [(START, "load"), ("load", "retrieve"), ("retrieve", "answer"), ("answer", "finish")],
+    )
     yield
     await http.aclose()
 
 
 app = FastAPI(title="hustle-agent", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-class RunRequest(BaseModel):
+class IndexRequest(BaseModel):
     url: HttpUrl
-    question: str | None = None
 
 
-async def _run(run_id: str, url: str, question: str | None) -> None:
+class QueryRequest(BaseModel):
+    url: HttpUrl
+    question: str
+
+
+async def _run(graph, run_id: str, initial: AgentState) -> None:
     cfg = {"configurable": {"thread_id": run_id}}
     try:
-        await _graph.ainvoke(
-            {"url": url, "question": question, "status": "running", "steps": [step("start", "ok")]},
+        await graph.ainvoke(
+            {**initial, "status": "running", "steps": [step("start", "ok")]},
             cfg,
         )
     except Exception as e:
-        # Node-level errors are caught inside nodes; this guards harness faults.
         try:
-            await _graph.aupdate_state(cfg, {"status": "failed", "error": str(e)[:300]})
+            await graph.aupdate_state(cfg, {"status": "failed", "error": str(e)[:300]})
         except Exception:
             pass
     finally:
@@ -440,16 +498,43 @@ async def health() -> dict[str, bool]:
 
 
 @app.get("/", include_in_schema=False)
-async def index() -> FileResponse:
-    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
+async def index_page() -> FileResponse:
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-@app.post("/runs", status_code=202)
-async def start_run(req: RunRequest) -> dict[str, str]:
-    run_id = uuid.uuid4().hex
+@app.post("/index", status_code=202)
+async def start_index(req: IndexRequest) -> dict[str, str]:
+    run_id = "idx:" + uuid.uuid4().hex
     _pending.add(run_id)
-    asyncio.create_task(_run(run_id, str(req.url), req.question))
+    asyncio.create_task(_run(_index_graph, run_id, {"url": str(req.url)}))
     return {"run_id": run_id, "status": "running"}
+
+
+@app.post("/query", status_code=202)
+async def start_query(req: QueryRequest) -> dict[str, str]:
+    run_id = "qry:" + uuid.uuid4().hex
+    _pending.add(run_id)
+    asyncio.create_task(_run(_query_graph, run_id, {"url": str(req.url), "question": req.question}))
+    return {"run_id": run_id, "status": "running"}
+
+
+@app.get("/sites")
+async def list_sites() -> dict[str, Any]:
+    out = []
+    async with _db.execute(
+        "SELECT url, title, chunks, indexed_at FROM corpora ORDER BY indexed_at DESC"
+    ) as cur:
+        async for url, title, chunks, indexed_at in cur:
+            out.append({
+                "url": url, "title": title,
+                "chunk_count": len(json.loads(chunks)),
+                "indexed_at": indexed_at,
+            })
+    return {"sites": out}
+
+
+def _graph_for(run_id: str):
+    return _query_graph if run_id.startswith("qry:") else _index_graph
 
 
 def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
@@ -470,11 +555,11 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@app.get("/runs/{run_id}")
+@app.get("/runs/{run_id:path}")
 async def get_run(run_id: str) -> dict[str, Any]:
-    snap = await _graph.aget_state({"configurable": {"thread_id": run_id}})
+    snap = await _graph_for(run_id).aget_state({"configurable": {"thread_id": run_id}})
     if snap is None or not snap.values:
-        if run_id in _pending:  # accepted, first checkpoint not yet written
+        if run_id in _pending:
             return _snapshot(run_id, {"status": "running", "steps": []})
         raise HTTPException(404, "run not found")
     return _snapshot(run_id, snap.values)

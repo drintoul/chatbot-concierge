@@ -62,43 +62,48 @@ test("agent serves the demo page", async () => {
   expect(await res.text()).toContain("hustle-agent");
 });
 
-test("agent runs deterministic scrape→answer pipeline", async () => {
+const SITE = "https://example.com/";
+
+async function indexSite(ctx: Awaited<ReturnType<typeof request.newContext>>): Promise<RunState> {
+  const start = await ctx.post(`${AGENT}/index`, { data: { url: SITE } });
+  expect(start.status()).toBe(202);
+  const { run_id } = (await start.json()) as { run_id: string };
+  return pollRun(ctx, run_id);
+}
+
+test("index workflow crawls and stores a corpus", async () => {
   test.setTimeout(180_000);
   const ctx = await request.newContext();
-  const start = await ctx.post(`${AGENT}/runs`, {
-    data: { url: "https://example.com", question: "What is this domain used for?" },
+  const state = await indexSite(ctx);
+  expect(state.error).toBeNull();
+  expect(state.status).toBe("done");
+  expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "store"]);
+
+  const sites = (await (await ctx.get(`${AGENT}/sites`)).json()) as {
+    sites: { url: string; chunk_count: number }[];
+  };
+  expect(sites.sites.some((s) => s.url === SITE)).toBe(true);
+});
+
+test("query workflow answers from the stored corpus", async () => {
+  test.setTimeout(240_000);
+  const ctx = await request.newContext();
+  await indexSite(ctx); // idempotent — rebuilds the corpus
+
+  const start = await ctx.post(`${AGENT}/query`, {
+    data: { url: SITE, question: "What is this domain used for?" },
   });
   expect(start.status()).toBe(202);
   const { run_id } = (await start.json()) as { run_id: string };
-
   const state = await pollRun(ctx, run_id);
+
   expect(state.error).toBeNull();
   expect(state.status).toBe("done");
   expect(state.answer ?? "").toMatch(/example/i);
-  // Fixed graph order — determinism means the node trace is identical every run.
-  expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "retrieve", "answer"]);
+  expect(state.steps.map((s) => s.node)).toEqual(["start", "load", "retrieve", "answer"]);
   expect(state.sources?.length ?? 0).toBeGreaterThan(0);
-});
 
-test("agent checkpoints run state for later inspection", async () => {
-  test.setTimeout(180_000);
-  const ctx = await request.newContext();
-  const start = await ctx.post(`${AGENT}/runs`, {
-    data: { url: "https://example.com" }, // no question → retrieve skips, no answer node
-  });
-  const { run_id } = (await start.json()) as { run_id: string };
-  const state = await pollRun(ctx, run_id);
-
-  expect(state.status).toBe("done");
-  expect(state.page_count ?? 0).toBeGreaterThan(0);
-  expect(state.steps.map((s) => s.node)).toEqual(["start", "crawl", "chunk", "embed", "retrieve"]);
-  expect(state.steps.at(-1)?.status).toBe("skipped");
-
-  // Same run, re-fetched — state comes from the SQLite checkpointer.
-  const again = await ctx.get(`${AGENT}/runs/${run_id}`);
+  // Run state persists — checkpointed, inspectable after the fact.
+  const again = await ctx.get(`${AGENT}/runs/${encodeURIComponent(run_id)}`);
   expect((await again.json()).status).toBe("done");
-
-  const list = await ctx.get(`${AGENT}/runs`);
-  const runs = ((await list.json()) as { runs: RunState[] }).runs;
-  expect(runs.length).toBeGreaterThan(0);
 });

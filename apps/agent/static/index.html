@@ -3,158 +3,315 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>hustle-agent — LangGraph demo</title>
+<title>hustle-agent</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #0c0e13; --panel: #14171f; --panel2: #1a1e28; --line: #262c3a;
+    --txt: #e6e8ee; --dim: #8b93a5; --accent: #5f9dff; --accent2: #7c5fff;
+    --ok: #5fd68a; --warn: #d8c25f; --bad: #f08888;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #0f1115; color: #e6e8ee;
+    margin: 0; font: 15px/1.5 system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(1000px 500px at 80% -10%, rgba(124,95,255,.12), transparent),
+      radial-gradient(800px 400px at 10% 110%, rgba(95,157,255,.08), transparent),
+      var(--bg);
+    color: var(--txt); min-height: 100vh;
     display: flex; justify-content: center; padding: 40px 16px;
   }
-  main { width: 100%; max-width: 720px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  .sub { color: #8b93a5; font-size: 13px; margin-bottom: 24px; }
-  form { display: grid; gap: 10px; margin-bottom: 28px; }
-  label { font-size: 12px; color: #8b93a5; text-transform: uppercase; letter-spacing: .05em; }
-  input {
-    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a2f3a;
-    background: #171a21; color: #e6e8ee; font: inherit;
+  main { width: 100%; max-width: 760px; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .brand img { width: 34px; height: 34px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -.02em; }
+  .sub { color: var(--dim); font-size: 13px; margin-bottom: 26px; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 6px; margin-bottom: 22px; border-bottom: 1px solid var(--line); }
+  .tab {
+    padding: 9px 16px; border: 0; background: none; color: var(--dim);
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
   }
-  input:focus { outline: none; border-color: #4f8cff; }
-  button {
-    padding: 10px 18px; border: 0; border-radius: 8px; background: #4f8cff;
-    color: #fff; font: inherit; font-weight: 600; cursor: pointer; justify-self: start;
+  .tab.active { color: var(--txt); border-bottom-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--txt); }
+  .pane { display: none; }
+  .pane.active { display: block; animation: in .2s ease; }
+  @keyframes in { from { opacity: 0; transform: translateY(3px); } }
+
+  form { display: grid; gap: 12px; margin-bottom: 24px; }
+  label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; display: block; margin-bottom: 4px; }
+  input, select {
+    width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--txt); font: inherit;
   }
-  button:disabled { opacity: .5; cursor: default; }
-  .steps { display: grid; gap: 8px; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(95,157,255,.15); }
+  button.cta {
+    padding: 11px 20px; border: 0; border-radius: 9px; font: inherit; font-weight: 600;
+    cursor: pointer; justify-self: start; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    transition: transform .1s, filter .15s;
+  }
+  button.cta:hover:not(:disabled) { filter: brightness(1.1); }
+  button.cta:active:not(:disabled) { transform: scale(.98); }
+  button.cta:disabled { opacity: .5; cursor: default; }
+
+  .hint { color: var(--dim); font-size: 13px; }
+  .steps { display: grid; gap: 7px; }
   .step {
-    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
-    background: #171a21; border: 1px solid #2a2f3a; border-radius: 8px;
-    animation: in .25s ease;
+    display: flex; align-items: center; gap: 12px; padding: 9px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    animation: in .25s ease; font-size: 14px;
   }
-  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
-  .node { font-weight: 600; width: 90px; }
-  .pill {
-    font-size: 11px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
-    letter-spacing: .05em;
-  }
-  .ok { background: #14361f; color: #5fd68a; }
-  .skipped { background: #33301a; color: #d8c25f; }
-  .failed { background: #3a1d1d; color: #f08888; }
-  .detail { color: #8b93a5; font-size: 13px; }
+  .node { font-weight: 600; width: 80px; font-family: ui-monospace, monospace; font-size: 13px; }
+  .pill { font-size: 10px; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  .ok { background: rgba(95,214,138,.13); color: var(--ok); }
+  .skipped { background: rgba(216,194,95,.13); color: var(--warn); }
+  .failed { background: rgba(240,136,136,.13); color: var(--bad); }
+  .detail { color: var(--dim); font-size: 12px; }
+  #status, .status { color: var(--dim); font-size: 13px; margin-bottom: 10px; min-height: 20px; }
+
   .card {
-    margin-top: 16px; padding: 16px; background: #171a21;
-    border: 1px solid #2a2f3a; border-radius: 8px; white-space: pre-wrap;
+    margin-top: 14px; padding: 15px 16px; background: var(--panel2);
+    border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap;
   }
-  .card h2 { font-size: 13px; color: #8b93a5; text-transform: uppercase;
-    letter-spacing: .05em; margin: 0 0 8px; }
-  .err { border-color: #5c2c2c; }
-  #status { color: #8b93a5; font-size: 13px; margin-bottom: 10px; min-height: 20px; }
-  .spinner::after { content: "…"; animation: dots 1.2s steps(4) infinite; }
-  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .card h2 { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .card.err { border-color: rgba(240,136,136,.4); }
+  .card a { color: var(--accent); word-break: break-all; }
+
+  .site-list { display: grid; gap: 7px; margin-bottom: 20px; }
+  .site {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 10px 14px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 9px; font-size: 13px;
+  }
+  .site .u { font-family: ui-monospace, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+  .site .m { color: var(--dim); white-space: nowrap; font-size: 12px; }
+
+  /* chatbot */
+  .chat {
+    display: flex; flex-direction: column; gap: 10px; min-height: 260px;
+    max-height: 50vh; overflow-y: auto; padding: 14px; margin-bottom: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  }
+  .msg { max-width: 85%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; font-size: 14px; }
+  .msg.user { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--panel2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .msg.bot .srcs { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; }
+  .msg.bot .srcs a { color: var(--accent); word-break: break-all; }
+  .typing { display: inline-flex; gap: 4px; padding: 4px 2px; }
+  .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--dim); animation: blink 1.2s infinite; }
+  .typing i:nth-child(2) { animation-delay: .2s; }
+  .typing i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+  .chatbar { display: flex; gap: 8px; }
+  .chatbar input { flex: 1; }
+  .chatbar button { padding: 11px 18px; }
 </style>
 </head>
 <body>
 <main>
-  <h1>hustle-agent</h1>
-  <div class="sub">Deterministic LangGraph pipeline — crawl (2 levels) → chunk → embed → retrieve → answer. Every node checkpoints; watch it progress below.</div>
-
-  <form id="f">
+  <div class="brand">
+    <img src="/static/favicon.svg" alt="">
     <div>
-      <label for="url">Page to scrape</label>
-      <input id="url" value="https://example.com" required>
+      <h1>hustle-agent</h1>
+      <div class="sub">Deterministic LangGraph concierge — index a site once, then ask it anything.</div>
     </div>
-    <div>
-      <label for="q">Question <span style="text-transform:none">(optional — leave blank to just index)</span></label>
-      <input id="q" value="What is this domain used for?">
-    </div>
-    <button id="go" type="submit">Run pipeline</button>
-  </form>
+  </div>
 
-  <div id="status"></div>
-  <div id="steps" class="steps"></div>
-  <div id="out"></div>
+  <div class="tabs">
+    <button class="tab active" data-t="index">① Index site</button>
+    <button class="tab" data-t="query">② Query</button>
+    <button class="tab" data-t="chat">③ Chatbot</button>
+  </div>
+
+  <!-- ================= INDEX ================= -->
+  <section class="pane active" id="pane-index">
+    <form id="f-index">
+      <div>
+        <label for="i-url">Site to index (crawls 2 levels deep)</label>
+        <input id="i-url" value="https://www.fraserriverlodge.com/" required>
+      </div>
+      <button class="cta" type="submit">Index site</button>
+      <div class="hint">One-time per site: crawl → chunk → embed → store. ~1 min. Re-run anytime to refresh.</div>
+    </form>
+    <div class="status" id="s-index"></div>
+    <div class="steps" id="steps-index"></div>
+    <div id="out-index"></div>
+
+    <div style="margin-top:28px">
+      <label>Indexed sites</label>
+      <div class="site-list" id="sites"></div>
+    </div>
+  </section>
+
+  <!-- ================= QUERY ================= -->
+  <section class="pane" id="pane-query">
+    <form id="f-query">
+      <div>
+        <label for="q-site">Indexed site</label>
+        <select id="q-site"></select>
+      </div>
+      <div>
+        <label for="q-text">Question</label>
+        <input id="q-text" value="How much does it cost to stay at the Lodge?" required>
+      </div>
+      <button class="cta" type="submit">Ask</button>
+      <div class="hint">Fast path — no re-crawl. load → retrieve → answer (~seconds).</div>
+    </form>
+    <div class="status" id="s-query"></div>
+    <div class="steps" id="steps-query"></div>
+    <div id="out-query"></div>
+  </section>
+
+  <!-- ================= CHATBOT ================= -->
+  <section class="pane" id="pane-chat">
+    <div style="margin-bottom:12px">
+      <label for="c-site">Chatting as concierge for</label>
+      <select id="c-site"></select>
+    </div>
+    <div class="chat" id="chat">
+      <div class="msg bot">Hi! I can answer questions about this site. Pick an indexed site above and ask away.</div>
+    </div>
+    <form class="chatbar" id="f-chat">
+      <input id="c-text" placeholder="Ask about prices, pets, location…" autocomplete="off">
+      <button class="cta" type="submit">Send</button>
+    </form>
+  </section>
+</main>
 
 <script>
-const f = document.getElementById("f"), go = document.getElementById("go"),
-      statusEl = document.getElementById("status"), stepsEl = document.getElementById("steps"),
-      outEl = document.getElementById("out");
-let rendered = 0;
+const $ = (id) => document.getElementById(id);
+const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat" };
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+  Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
+});
 
+// ---------- shared ----------
 const fmt = (d) =>
-  [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null, d.chars != null ? d.chars + " chars" : null,
+  [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null,
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
    d.best != null ? "best " + d.best : null, d.model || null, d.reason || null]
     .filter(Boolean).join(" · ");
 
-function draw(steps) {
-  for (; rendered < steps.length; rendered++) {
-    const s = steps[rendered], el = document.createElement("div");
-    el.className = "step";
-    el.innerHTML =
-      `<span class="node"></span><span class="pill ${s.status}"></span><span class="detail"></span>`;
-    el.children[0].textContent = s.node;
-    el.children[1].textContent = s.status;
-    el.children[2].textContent = fmt(s);
-    stepsEl.appendChild(el);
+function makeRunner(statusEl, stepsEl, outEl) {
+  let rendered = 0;
+  function draw(steps) {
+    for (; rendered < steps.length; rendered++) {
+      const s = steps[rendered], el = document.createElement("div");
+      el.className = "step";
+      el.innerHTML = `<span class="node"></span><span class="pill ${s.status}"></span><span class="detail"></span>`;
+      el.children[0].textContent = s.node;
+      el.children[1].textContent = s.status;
+      el.children[2].textContent = fmt(s);
+      stepsEl.appendChild(el);
+    }
   }
+  return async function run(endpoint, body) {
+    rendered = 0; stepsEl.innerHTML = ""; outEl.innerHTML = "";
+    statusEl.textContent = "starting";
+    const res = await fetch(endpoint, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const { run_id } = await res.json();
+    for (;;) {
+      const r = await fetch("/runs/" + encodeURIComponent(run_id));
+      const st = await r.json();
+      statusEl.textContent = "running — " + (st.steps?.length || 0) + " node(s) complete";
+      draw(st.steps || []);
+      if (st.status !== "running") { statusEl.textContent = st.status; return st; }
+      await new Promise(x => setTimeout(x, 900));
+    }
+  };
 }
 
-function finish(state) {
-  statusEl.className = "";
-  statusEl.textContent = state.status === "done" ? "done" : "failed: " + (state.error || "unknown");
+function answerCard(outEl, st) {
   const card = document.createElement("div");
-  card.className = "card" + (state.status === "failed" ? " err" : "");
+  card.className = "card" + (st.status === "failed" ? " err" : "");
   card.innerHTML = "<h2></h2><div class='body'></div>";
-  card.querySelector("h2").textContent = state.status === "failed" ? "error" : "answer";
+  card.querySelector("h2").textContent = st.status === "failed" ? "error" : "answer";
   card.querySelector(".body").textContent =
-    state.status === "failed" ? state.error || "unknown error"
-    : (state.answer || "(indexing run — no question asked)");
+    st.status === "failed" ? st.error || "unknown error" : (st.answer || "(no answer)");
   outEl.appendChild(card);
-  if (state.sources?.length) {
+  if (st.sources?.length) {
     const sc = document.createElement("div");
     sc.className = "card";
-    sc.innerHTML = "<h2>sources</h2>" +
-      state.sources.map(u => `<div><a href="${u}" style="color:#4f8cff" target="_blank">${u}</a></div>`).join("");
+    sc.innerHTML = "<h2>source</h2>" +
+      st.sources.map(u => `<div><a href="${u}" target="_blank">${u}</a></div>`).join("");
     outEl.appendChild(sc);
   }
 }
 
-async function poll(id) {
-  for (;;) {
-    const res = await fetch("/runs/" + id);
-    const state = await res.json();
-    statusEl.className = "spinner";
-    statusEl.textContent = "running — " + (state.steps?.length || 0) + " node(s) complete";
-    draw(state.steps || []);
-    if (state.status !== "running") return finish(state);
-    await new Promise(r => setTimeout(r, 900));
+// ---------- sites ----------
+async function loadSites() {
+  const { sites } = await (await fetch("/sites")).json();
+  $("sites").innerHTML = sites.length
+    ? sites.map(s => `<div class="site"><span class="u">${s.url}</span><span class="m">${s.chunk_count} chunks · ${new Date(s.indexed_at*1000).toLocaleTimeString()}</span></div>`).join("")
+    : `<div class="hint">Nothing indexed yet.</div>`;
+  for (const sel of ["q-site", "c-site"]) {
+    $(sel).innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
   }
 }
+loadSites();
 
-f.addEventListener("submit", async (e) => {
+// ---------- workflow 1: index ----------
+$("f-index").addEventListener("submit", async (e) => {
   e.preventDefault();
-  go.disabled = true; rendered = 0;
-  stepsEl.innerHTML = ""; outEl.innerHTML = "";
-  statusEl.textContent = "starting";
+  const btn = e.target.querySelector("button"); btn.disabled = true;
   try {
-    const res = await fetch("/runs", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        url: document.getElementById("url").value,
-        question: document.getElementById("q").value || null,
-      }),
-    });
-    const { run_id } = await res.json();
-    await poll(run_id);
+    const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", { url: $("i-url").value });
+    if (st.status === "done") {
+      const c = document.createElement("div");
+      c.className = "card";
+      c.innerHTML = `<h2>indexed</h2>${st.page_count ?? "?"} pages · ${st.chunk_count} chunks — ready for Query and Chatbot.`;
+      $("out-index").appendChild(c);
+      loadSites();
+    } else answerCard($("out-index"), st);
+  } catch (err) { $("s-index").textContent = "failed: " + err; }
+  btn.disabled = false;
+});
+
+// ---------- workflow 2: query ----------
+$("f-query").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button"); btn.disabled = true;
+  try {
+    const st = await makeRunner($("s-query"), $("steps-query"), $("out-query"))("/query",
+      { url: $("q-site").value, question: $("q-text").value });
+    answerCard($("out-query"), st);
+  } catch (err) { $("s-query").textContent = "failed: " + err; }
+  btn.disabled = false;
+});
+
+// ---------- workflow 3: chatbot ----------
+const chat = $("chat");
+function bubble(cls, html) {
+  const m = document.createElement("div");
+  m.className = "msg " + cls;
+  m.innerHTML = html;
+  chat.appendChild(m); chat.scrollTop = chat.scrollHeight;
+  return m;
+}
+$("f-chat").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("c-text").value.trim(); if (!text) return;
+  $("c-text").value = "";
+  bubble("user", text.replace(/</g, "&lt;"));
+  const typing = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
+  try {
+    const st = await makeRunner({ textContent: "" }, { innerHTML: "", appendChild(){} }, { innerHTML: "" })("/query",
+      { url: $("c-site").value, question: text });
+    typing.innerHTML = (st.answer || st.error || "…").replace(/</g, "&lt;").replace(/\n/g, "<br>") +
+      (st.sources?.length ? `<div class="srcs">source: <a href="${st.sources[0]}" target="_blank">${st.sources[0]}</a></div>` : "");
   } catch (err) {
-    statusEl.className = "";
-    statusEl.textContent = "request failed: " + err;
-  } finally {
-    go.disabled = false;
+    typing.textContent = "Something went wrong: " + err;
   }
+  chat.scrollTop = chat.scrollHeight;
 });
 </script>
-</main>
 </body>
 </html>
