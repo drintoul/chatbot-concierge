@@ -45,7 +45,7 @@
   #chat-bg {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background-size: cover; background-position: top center;
-    opacity: .14; filter: saturate(.8) blur(1px);
+    opacity: .3; filter: saturate(.8) blur(1px);
   }
   @keyframes in { from { opacity: 0; transform: translateY(4px); } }
 
@@ -240,7 +240,7 @@
   <!-- ================= CHATBOT ================= -->
   <section class="pane" id="pane-chat">
     <div id="chat-bg"></div>
-    <div style="margin-bottom:12px;max-width:420px">
+    <div class="card" style="margin:0 0 12px;max-width:460px;white-space:normal">
       <label for="c-site">Chatting as concierge for</label>
       <select id="c-site"></select>
       <div class="hint" style="margin-top:10px">Preview of the embeddable widget — the bubble floats bottom-right over the host page. Click it to chat.</div>
