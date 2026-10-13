@@ -522,11 +522,12 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
-        "SELECT url, title, chunks, indexed_at FROM corpora ORDER BY indexed_at DESC"
+        "SELECT url, title, pages, chunks, indexed_at FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, chunks, indexed_at in cur:
+        async for url, title, pages, chunks, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
+                "pages": json.loads(pages),
                 "chunk_count": len(json.loads(chunks)),
                 "indexed_at": indexed_at,
             })
@@ -546,6 +547,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "question": v.get("question"),
         "title": (v.get("pages") or [{}])[0].get("title"),
         "page_count": len(v.get("pages") or []),
+        "pages": [{k: p.get(k) for k in ("url", "title")} for p in (v.get("pages") or [])],
         "steps": v.get("steps", []),
         "chunk_count": len(v.get("chunks") or []),
         "ranked": [{k: r.get(k) for k in ("index", "score", "source")} for r in (v.get("ranked") or [])],

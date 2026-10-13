@@ -89,6 +89,19 @@
   }
   .site .u { font-family: ui-monospace, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
   .site .m { color: var(--dim); white-space: nowrap; font-size: 12px; }
+  .site .tw { cursor: pointer; user-select: none; font-size: 11px; color: var(--accent); white-space: nowrap; }
+  .site-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; }
+  .site-wrap .site { border: 0; }
+
+  /* crawl tree */
+  .tree { font: 12px/1.7 ui-monospace, monospace; list-style: none; margin: 6px 0 0; padding-left: 0; }
+  .tree ul { list-style: none; margin: 0; padding-left: 18px; border-left: 1px solid var(--line); }
+  .tree li { padding: 1px 0; }
+  .tree .seg { color: var(--txt); }
+  .tree .seg.leaf { color: var(--accent); }
+  .tree .ttl { color: var(--dim); font-family: system-ui; font-size: 11px; margin-left: 8px; }
+  .tree-box { margin-top: 14px; padding: 12px 14px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  .tree-box h2 { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
 
   /* chatbot */
   .chat {
@@ -246,12 +259,80 @@ function answerCard(outEl, st) {
   }
 }
 
+// ---------- crawl tree ----------
+function buildTree(pages) {
+  const root = { children: {}, title: null, url: null };
+  for (const p of pages || []) {
+    let segs;
+    try { segs = new URL(p.url).pathname.split("/").filter(Boolean); }
+    catch { segs = [p.url]; }
+    let node = root;
+    for (const s of segs) node = node.children[s] ??= { children: {}, title: null, url: null };
+    node.title = p.title; node.url = p.url; node.leaf = true;
+  }
+  return root;
+}
+function treeEl(node, depth = 0) {
+  const ul = document.createElement("ul");
+  ul.className = depth === 0 ? "tree" : "";
+  for (const [seg, child] of Object.entries(node.children).sort(([a],[b]) => a.localeCompare(b))) {
+    const li = document.createElement("li");
+    const isLeaf = child.leaf && Object.keys(child.children).length === 0;
+    const span = document.createElement("span");
+    span.className = "seg" + (isLeaf ? " leaf" : "");
+    span.textContent = seg + (Object.keys(child.children).length ? "/" : "");
+    li.appendChild(span);
+    if (child.title) {
+      const t = document.createElement("span");
+      t.className = "ttl";
+      t.textContent = child.title;
+      li.appendChild(t);
+    }
+    if (Object.keys(child.children).length) li.appendChild(treeEl(child, depth + 1));
+    ul.appendChild(li);
+  }
+  return ul;
+}
+function treeBox(pages, host) {
+  if (!pages?.length) return;
+  const box = document.createElement("div");
+  box.className = "tree-box";
+  box.innerHTML = `<h2>crawled — ${pages.length} pages</h2>`;
+  const hostEl = document.createElement("div");
+  hostEl.style.font = "12px ui-monospace, monospace";
+  try { hostEl.textContent = new URL(pages[0].url).hostname + "/"; } catch { hostEl.textContent = "site/"; }
+  hostEl.style.color = "var(--txt)";
+  box.appendChild(hostEl);
+  box.appendChild(treeEl(buildTree(pages)));
+  host.appendChild(box);
+}
+
 // ---------- sites ----------
 async function loadSites() {
   const { sites } = await (await fetch("/sites")).json();
-  $("sites").innerHTML = sites.length
-    ? sites.map(s => `<div class="site"><span class="u">${s.url}</span><span class="m">${s.chunk_count} chunks · ${new Date(s.indexed_at*1000).toLocaleTimeString()}</span></div>`).join("")
-    : `<div class="hint">Nothing indexed yet.</div>`;
+  const list = $("sites");
+  list.innerHTML = "";
+  if (!sites.length) list.innerHTML = `<div class="hint">Nothing indexed yet.</div>`;
+  for (const s of sites) {
+    const wrap = document.createElement("div");
+    wrap.className = "site-wrap";
+    const row = document.createElement("div");
+    row.className = "site";
+    row.innerHTML = `<span class="u">${s.url}</span>` +
+      `<span class="m">${s.chunk_count} chunks · ${s.pages?.length || "?"} pages · ${new Date(s.indexed_at*1000).toLocaleTimeString()}</span>` +
+      `<span class="tw">tree ▾</span>`;
+    const treeHolder = document.createElement("div");
+    treeHolder.style.display = "none";
+    treeHolder.style.padding = "0 14px 10px";
+    row.querySelector(".tw").onclick = () => {
+      const open = treeHolder.style.display !== "none";
+      treeHolder.style.display = open ? "none" : "block";
+      row.querySelector(".tw").textContent = open ? "tree ▾" : "tree ▴";
+      if (!open && !treeHolder.childNodes.length) treeBox(s.pages || [], treeHolder);
+    };
+    wrap.appendChild(row); wrap.appendChild(treeHolder);
+    list.appendChild(wrap);
+  }
   for (const sel of ["q-site", "c-site"]) {
     $(sel).innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
   }
@@ -269,6 +350,7 @@ $("f-index").addEventListener("submit", async (e) => {
       c.className = "card";
       c.innerHTML = `<h2>indexed</h2>${st.page_count ?? "?"} pages · ${st.chunk_count} chunks — ready for Query and Chatbot.`;
       $("out-index").appendChild(c);
+      treeBox(st.pages || [], $("out-index"));
       loadSites();
     } else answerCard($("out-index"), st);
   } catch (err) { $("s-index").textContent = "failed: " + err; }
