@@ -85,27 +85,6 @@ def bail(state: AgentState) -> bool:
     return state.get("status") == "failed"
 
 
-_TEL_LINK = re.compile(r"tel:([+\d][\d().\- ]{4,19}\d)", re.I)
-_PHONE = re.compile(r"(?<!\d)(?:\+?1[\s.\-]?)?\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4}(?!\d)")
-
-
-def _fmt_phone(raw: str) -> str:
-    d = re.sub(r"\D", "", raw)
-    if len(d) == 11 and d.startswith("1"):
-        d = d[1:]
-    return f"({d[:3]}) {d[3:6]}-{d[6:]}" if len(d) == 10 else raw
-
-
-def _find_phone(texts: list[str]) -> str | None:
-    """Best-guess contact number: tel: links first (deliberate markup),
-    then bare NA phone patterns."""
-    for pat in (_TEL_LINK, _PHONE):
-        for t in texts:
-            if m := pat.search(t):
-                return _fmt_phone(m.group(1 if pat is _TEL_LINK else 0))
-    return None
-
-
 # ------------------------------------------------------- index-graph nodes
 
 async def crawl(state: AgentState) -> AgentState:
@@ -154,17 +133,8 @@ async def crawl(state: AgentState) -> AgentState:
             })
         if not pages:
             raise RuntimeError("crawl returned no usable pages")
-        # Scan contact-ish pages first — that's where numbers live.
-        texts = [
-            p["markdown"]
-            for p in sorted(
-                pages,
-                key=lambda p: 0 if re.search(r"contact|location|hours", p["url"], re.I) else 1,
-            )
-        ]
         return {
             "pages": pages,
-            "phone": _find_phone(texts),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
                            pages=len(pages), job=job_id)],
         }
@@ -298,14 +268,10 @@ async def load(state: AgentState) -> AgentState:
         row = await cur.fetchone()
     if not row:
         return fail(state, "load", f"site not indexed — run the Index workflow first: {url}")
-    chunks = json.loads(row[0])
-    # Corpora indexed before phone extraction still get a handoff number:
-    # scan the stored chunks rather than forcing a re-index.
-    phone = row[2] or _find_phone([c["text"] for c in chunks])
     return {
-        "chunks": chunks,
+        "chunks": json.loads(row[0]),
         "embeddings": json.loads(row[1]),
-        "phone": phone,
+        "phone": row[2],
         "steps": [step("load", "ok", url=url)],
     }
 
@@ -548,6 +514,7 @@ class IndexRequest(BaseModel):
     url: HttpUrl
     limit: int | None = None  # overrides AGENT_CRAWL_LIMIT when set
     depth: int | None = None  # overrides AGENT_CRAWL_DEPTH when set
+    phone: str | None = None  # contact number for handoff answers
 
 
 class QueryRequest(BaseModel):
@@ -590,6 +557,8 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
         initial["crawl_limit"] = req.limit
     if req.depth:
         initial["crawl_depth"] = req.depth
+    if req.phone:
+        initial["phone"] = req.phone.strip() or None
     asyncio.create_task(_run(_index_graph, run_id, initial))
     return {"run_id": run_id, "status": "running"}
 
@@ -606,14 +575,15 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
-        "SELECT url, title, pages, json_array_length(chunks), indexed_at"
+        "SELECT url, title, pages, json_array_length(chunks), phone, indexed_at"
         " FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunk_count, indexed_at in cur:
+        async for url, title, pages, chunk_count, phone, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
                 "chunk_count": chunk_count,
+                "phone": phone,
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
