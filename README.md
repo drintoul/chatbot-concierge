@@ -19,15 +19,15 @@ playwright, or firecrawl are used. To move to a VPS, copy this repo, set
 *① Index site — one-time crawl → chunk → embed → store per site, with
 optional contact info used in handoff replies and per-run page/depth limits.*
 
-![Audit tab](docs/audit-tab.png)
-
-*④ Audit — every visitor question logged with its outcome (grounded /
-handoff / error), latency, answer, and sources; filterable per site.*
-
 ![Chatbot tab](docs/chatbot-tab.png)
 
 *③ Chatbot — preview of the embeddable widget: a launcher bubble floats
 bottom-right over the host page and opens the concierge popup.*
+
+![Audit tab](docs/audit-tab.png)
+
+*④ Audit — every visitor question logged with its outcome (grounded /
+handoff / error), latency, answer, and sources; filterable per site.*
 
 ## Quick start
 
