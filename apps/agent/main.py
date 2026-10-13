@@ -369,6 +369,12 @@ SYSTEM_PROMPT = (
     "prices, or availability."
 )
 
+# Model refusals are internal sentinels; visitors get a handoff instead.
+HANDOFF = (
+    "I'm sorry — I couldn't find that on our website. "
+    "Please give us a call and our team will be happy to help."
+)
+
 
 async def answer(state: AgentState) -> AgentState:
     if bail(state):
@@ -377,7 +383,7 @@ async def answer(state: AgentState) -> AgentState:
     ranked = state.get("ranked") or []
     if not ranked:
         return {
-            "answer": "I don't have that information.",
+            "answer": HANDOFF,
             "status": "done",
             "steps": [step("answer", "ok", grounded=False)],
         }
@@ -412,7 +418,7 @@ async def answer(state: AgentState) -> AgentState:
                 "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"])],
             }
     return {
-        "answer": "I don't have that information.",
+        "answer": HANDOFF,
         "status": "done",
         "steps": [step("answer", "ok", grounded=False, tried=min(len(ranked), ANSWER_TRIES))],
     }
