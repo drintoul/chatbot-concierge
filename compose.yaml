@@ -1,7 +1,7 @@
 name: hustle-stack
 
-# Self-contained dev/demo stack: Ollama (LLM+embeddings), a standalone
-# Playwright browser server, and the full self-hosted Firecrawl pipeline.
+# Self-contained dev/demo stack: Ollama (LLM+embeddings) and the full
+# self-hosted Firecrawl pipeline (which brings its own render backend).
 # Nothing on the host is required except Docker — no local ollama, node, or
 # playwright installs are touched. Move to a VPS by copying this file plus
 # .env; all state lives in named volumes.
@@ -73,28 +73,6 @@ services:
       - 'ollama pull "$$OLLAMA_CHAT_MODEL" && ollama pull "$$OLLAMA_EMBED_MODEL"'
     restart: "no"
 
-  # ------------------------------------------------------------- playwright
-  # OPTIONAL: shared Chromium browser server for your own scripts/tests —
-  #   chromium.connect("ws://localhost:3100/browser")
-  # NOT needed for scraping: firecrawl has its own internal playwright
-  # service. Start it on demand with:
-  #   docker compose --profile browser up -d
-  playwright:
-    image: mcr.microsoft.com/playwright:v1.64.0-noble
-    profiles: ["browser", "test"]
-    command: npx playwright launch-server --browser chromium --config /etc/playwright/server.json
-    volumes:
-      - ./infra/playwright-server.json:/etc/playwright/server.json:ro
-    ports:
-      - "127.0.0.1:${PLAYWRIGHT_PORT:-3100}:3000"
-    shm_size: "1gb"   # chromium crashes on the default 64MB /dev/shm
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/3000'"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-    restart: unless-stopped
-
   # ------------------------------------------------------------- firecrawl
   firecrawl-api:
     image: ghcr.io/firecrawl/firecrawl:latest
@@ -135,8 +113,7 @@ services:
     restart: unless-stopped
 
   # Firecrawl's own page-render microservice (its /scrape backend). Internal
-  # only — distinct from the standalone `playwright` service above, which is
-  # a generic browser endpoint for your own tooling.
+  # only; this is the browser layer — no separate playwright service exists.
   firecrawl-playwright:
     image: ghcr.io/firecrawl/playwright-service:latest
     environment:
@@ -197,12 +174,9 @@ services:
     environment:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-      PLAYWRIGHT_WS_URL: ws://playwright:3000/browser
       FIRECRAWL_URL: http://firecrawl-api:3002
       OLLAMA_URL: http://ollama:11434
     depends_on:
-      playwright:
-        condition: service_healthy
       firecrawl-api:
         condition: service_started
       ollama:

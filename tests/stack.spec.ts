@@ -1,6 +1,5 @@
-import { test, expect, chromium, request } from "@playwright/test";
+import { test, expect, request } from "@playwright/test";
 
-const WS = process.env.PLAYWRIGHT_WS_URL ?? "ws://localhost:3100/browser";
 const FIRECRAWL = process.env.FIRECRAWL_URL ?? "http://localhost:3002";
 const OLLAMA = process.env.OLLAMA_URL ?? "http://localhost:11435";
 
@@ -10,14 +9,6 @@ test("ollama answers /api/tags", async () => {
   expect(res.ok()).toBeTruthy();
   const body = (await res.json()) as { models: unknown[] };
   expect(Array.isArray(body.models)).toBe(true);
-});
-
-test("standalone playwright browser server accepts connections", async () => {
-  const browser = await chromium.connect(WS);
-  const page = await browser.newPage();
-  await page.goto("data:text/html,<h1>stack ok</h1>");
-  await expect(page.locator("h1")).toHaveText("stack ok");
-  await browser.close();
 });
 
 test("firecrawl api is up", async () => {

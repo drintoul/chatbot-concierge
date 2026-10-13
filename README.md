@@ -1,9 +1,10 @@
 # hustle-stack
 
 Self-contained dev/demo stack in one `docker compose up`: **Ollama** (local
-LLM + embeddings), **Playwright** (shared headless-browser server), and
-**Firecrawl** (self-hosted web-scraping API, wired to use the project's
-Ollama for its LLM features).
+LLM + embeddings) and **Firecrawl** (self-hosted web-scraping API, wired to
+use the project's Ollama for its LLM features). Firecrawl brings its own
+internal Playwright render backend, so JavaScript-heavy pages work with no
+extra setup.
 
 Everything runs from published images — no host installs of ollama, node,
 playwright, or firecrawl are used. To move to a VPS, copy this repo, set
@@ -16,28 +17,16 @@ cp .env.example .env        # optional — defaults work out of the box
 docker compose up -d
 ```
 
-First boot pulls images (~5 GB) and then the ollama models
+First boot pulls images (~4 GB) and then the ollama models
 (~2.5 GB: `llama3.2:3b` + `nomic-embed-text`). Watch progress with
 `docker compose logs -f ollama-pull`.
 
 ## Endpoints
 
-| Service    | Local URL                          | Notes                          |
-| ---------- | ---------------------------------- | ------------------------------ |
-| Ollama     | `http://localhost:11435`           | OpenAI-compat at `/v1`         |
-| Firecrawl  | `http://localhost:3002`            | `POST /v2/scrape`, `/v2/crawl` |
-| Playwright | `ws://localhost:3100/browser`      | *opt-in*, see below            |
-
-> **Do I need the standalone `playwright` service?** Not for scraping —
-> Firecrawl bundles its own internal render service (`firecrawl-playwright`)
-> and uses it automatically. The standalone service only matters if you want
-> to drive a browser from *your own* code (`chromium.connect`) for things
-> Firecrawl can't do: custom automation, screenshots, logged-in flows. It's
-> opt-in so it doesn't eat ~2 GB of RAM on every `up`:
->
-> ```bash
-> docker compose --profile browser up -d playwright
-> ```
+| Service   | Local URL                   | Notes                          |
+| --------- | --------------------------- | ------------------------------ |
+| Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
+| Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/crawl` |
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
 > This project's container publishes on **11435** so the two never conflict.
@@ -51,9 +40,6 @@ First boot pulls images (~5 GB) and then the ollama models
 # Ollama is serving + models are pulled
 curl http://localhost:11435/api/tags
 
-# Playwright browser server is listening (ws endpoint in logs)
-docker compose logs playwright | grep "ws://"
-
 # Firecrawl scrape → markdown
 curl -s -X POST http://localhost:3002/v2/scrape \
   -H "content-type: application/json" \
@@ -66,11 +52,6 @@ docker compose --profile test run --rm e2e
 ## Architecture
 
 ```
-┌─────────────┐   ws://playwright:3000/browser   (opt-in `browser` profile)
-│ playwright  │ ◄────── your scripts/tests connect here
-│ (mcr image, │        (chromium.connect) — not needed for scraping
-│  chromium)  │
-└─────────────┘
 ┌─────────────┐
 │ ollama      │ ◄────── http://ollama:11434 (+ OpenAI-compat /v1)
 │ llama3.2 +  │
@@ -79,8 +60,8 @@ docker compose --profile test run --rm e2e
        │ OLLAMA_BASE_URL (firecrawl's LLM features point here)
 ┌──────┴───────────┐
 │ firecrawl-api    │ :3002 — REST API (harness runs api+workers)
-│  ├─ firecrawl-   │      page-render microservice (its own browsers,
-│  │  playwright   │      NOT the standalone service above)
+│  ├─ firecrawl-   │      page-render microservice (its own playwright
+│  │  playwright   │      browsers; handles JS-heavy pages)
 │  ├─ firecrawl-   │      redis — BullMQ/rate limiting
 │  │  redis        │
 │  ├─ firecrawl-   │      rabbitmq — Nuq job queue
@@ -90,19 +71,13 @@ docker compose --profile test run --rm e2e
 └──────────────────┘
 ```
 
-Two "playwright" things exist: `playwright` (opt-in `browser`/`test`
-profile) is a generic browser-server endpoint for your own tooling;
-`firecrawl-playwright` is Firecrawl's internal render backend — required
-for JS-rendered scraping, runs always, and is not published to the host.
+There is no standalone Playwright service — `firecrawl-playwright` is
+Firecrawl's internal render backend, required for JS-rendered scraping and
+not published to the host. If you later need to drive a browser from your
+own code, add a `launch-server` service to this compose file (that pattern
+was used here previously; see git history).
 
 ## Usage snippets
-
-Remote browser from your own scripts:
-
-```ts
-import { chromium } from "playwright";
-const browser = await chromium.connect("ws://localhost:3100/browser");
-```
 
 Ollama chat (OpenAI-compatible):
 
@@ -132,10 +107,6 @@ reservations (needs `nvidia-container-toolkit` on the host).
   and keep it that way, or firewall the ports.
 - `USE_DB_AUTHENTICATION=false` means **Firecrawl has no API key** — fine on
   the compose bridge/localhost, not acceptable exposed to the internet.
-- The standalone playwright server has **no auth** — anyone who can reach
-  the port controls a browser. Keep it localhost/firewalled, or drop the
-  port mapping entirely on the VPS (clients inside the network can still
-  use `ws://playwright:3000/browser`).
 - Set a real `FC_POSTGRES_PASSWORD` before deploying.
 - Backup: `docker run --rm -v hustle-stack_ollama-models:/v alpine tar cf - /v`
   (same pattern for `fc-pg-data`, `fc-redis-data`).
