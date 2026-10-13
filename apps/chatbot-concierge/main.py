@@ -246,8 +246,8 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
              embeddings=excluded.embeddings,
-             phone=COALESCE(excluded.phone, phone),
-             email=COALESCE(excluded.email, email),
+             phone=excluded.phone,
+             email=excluded.email,
              indexed_at=excluded.indexed_at""",
         (
             url,
