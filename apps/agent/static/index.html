@@ -132,9 +132,10 @@
   .evt .ea { font-size: 14px; white-space: pre-wrap; }
   .evt .esrc { margin-top: 8px; font-size: 13px; }
   .evt .esrc a { color: var(--accent); word-break: break-all; }
-  #a-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-  #a-head label { margin: 0; }
-  #a-refresh { padding: 10px 20px; font-size: 14px; }
+  #a-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  #a-head .grow { flex: 1; }
+  #a-head label { margin-bottom: 7px; }
+  #a-refresh { padding: 15px 22px; font-size: 15px; align-self: flex-end; }
 </style>
 </head>
 <body>
@@ -223,7 +224,10 @@
   <!-- ================= AUDIT ================= -->
   <section class="pane" id="pane-audit">
     <div id="a-head">
-      <label>What visitors asked, and what the concierge said</label>
+      <div class="grow">
+        <label for="a-site">Visitor questions for</label>
+        <select id="a-site"></select>
+      </div>
       <button class="cta" id="a-refresh" type="button">Refresh</button>
     </div>
     <div id="audit"></div>
@@ -387,6 +391,10 @@ async function loadSites() {
     el.innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
     if (sites.some(s => s.url === prev)) el.value = prev;
   }
+  const aSel = $("a-site"), aPrev = aSel.value;
+  aSel.innerHTML = `<option value="">All sites</option>` +
+    sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
+  if (aPrev === "" || sites.some(s => s.url === aPrev)) aSel.value = aPrev;
 }
 loadSites();
 
@@ -456,7 +464,8 @@ $("f-chat").addEventListener("submit", async (e) => {
 async function loadAudit() {
   const el = $("audit");
   el.innerHTML = `<div class="hint">Loading…</div>`;
-  const { events } = await (await fetch("/audit")).json();
+  const u = $("a-site").value;
+  const { events } = await (await fetch("/audit" + (u ? "?url=" + encodeURIComponent(u) : ""))).json();
   el.innerHTML = events.length ? "" : `<div class="hint">No questions logged yet.</div>`;
   for (const e of events) {
     const d = document.createElement("div");
@@ -482,6 +491,7 @@ async function loadAudit() {
   }
 }
 $("a-refresh").onclick = loadAudit;
+$("a-site").onchange = loadAudit;
 </script>
 </body>
 </html>

@@ -739,13 +739,19 @@ async def list_sites() -> dict[str, Any]:
 
 
 @app.get("/audit")
-async def list_audit(limit: int = 50) -> dict[str, Any]:
+async def list_audit(limit: int = 50, url: str | None = None) -> dict[str, Any]:
     out = []
-    async with _db.execute(
+    sql = (
         "SELECT ts, run_id, url, question, answer, grounded, sources,"
-        " latency_ms, error FROM events ORDER BY id DESC LIMIT ?",
-        (min(max(limit, 1), 200),),
-    ) as cur:
+        " latency_ms, error FROM events"
+    )
+    args: list[Any] = []
+    if url:
+        sql += " WHERE url=?"
+        args.append(_canon(url))
+    sql += " ORDER BY id DESC LIMIT ?"
+    args.append(min(max(limit, 1), 200))
+    async with _db.execute(sql, args) as cur:
         async for ts, run_id, url, question, answer, grounded, sources, lat, err in cur:
             out.append({
                 "ts": ts, "run_id": run_id, "url": url, "question": question,
