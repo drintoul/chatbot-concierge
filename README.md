@@ -12,6 +12,18 @@ Everything runs from published images — no host installs of ollama, node,
 playwright, or firecrawl are used. To move to a VPS, copy this repo, set
 `.env`, and run the same command. All state lives in named volumes.
 
+## Screenshots
+
+![Index tab](docs/index-tab.png)
+
+*① Index site — one-time crawl → chunk → embed → store per site, with
+optional contact info used in handoff replies and per-run page/depth limits.*
+
+![Audit tab](docs/audit-tab.png)
+
+*④ Audit — every visitor question logged with its outcome (grounded /
+handoff / error), latency, answer, and sources; filterable per site.*
+
 ## Quick start
 
 ```bash
