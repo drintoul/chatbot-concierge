@@ -185,8 +185,10 @@ async def retrieve(state: AgentState) -> AgentState:
 
 SYSTEM_PROMPT = (
     "You answer questions using ONLY the supplied scraped-page context. "
-    "If the context does not contain the answer, say exactly: "
-    "\"I don't have that information.\" Never invent facts."
+    "If the context contains relevant information, summarize it in 1-3 "
+    "sentences, sticking strictly to what the context states. If the context "
+    "contains nothing relevant, say exactly: \"I don't have that "
+    "information.\" Never invent facts, dates, prices, or availability."
 )
 
 
