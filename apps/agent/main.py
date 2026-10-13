@@ -16,7 +16,9 @@ deterministic chunker, pure-math hybrid ranking, fixed prompts.
 import asyncio
 import json
 import math
+import operator
 import os
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -24,7 +26,6 @@ from typing import Annotated, Any, Literal, TypedDict
 
 import aiosqlite
 import httpx
-import operator
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,7 +49,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
 _index_graph = None
 _query_graph = None
-_saver = None
+_saver: AsyncSqliteSaver = None
 _db: aiosqlite.Connection = None  # corpus store (same file as checkpoints)
 _pending: set[str] = set()
 
@@ -140,8 +141,6 @@ async def crawl(state: AgentState) -> AgentState:
         return fail(state, "crawl", e)
 
 
-import re
-
 _IMAGE_LINE = re.compile(r"^\s*!\[.*\]\(.*?\)\s*\\?\s*$")
 _LINK_LINE = re.compile(r"^\s*\[.*\]\(.*?\)\s*\\?\s*$")
 _BOILERPLATE = re.compile(
@@ -221,11 +220,16 @@ async def embed(state: AgentState) -> AgentState:
         return fail(state, "embed", e)
 
 
+def _canon(url: str) -> str:
+    """Corpus key — normalized to a trailing-slash origin."""
+    return url.rstrip("/") + "/"
+
+
 async def store(state: AgentState) -> AgentState:
     """Persist the corpus so query runs reuse it — no re-crawl per question."""
     if bail(state):
         return {}
-    url = state["url"].rstrip("/") + "/"
+    url = _canon(state["url"])
     await _db.execute(
         """INSERT INTO corpora(url, title, pages, chunks, embeddings, indexed_at)
            VALUES(?,?,?,?,?,?)
@@ -254,7 +258,7 @@ async def load(state: AgentState) -> AgentState:
     """Pull the persisted corpus for this URL into state."""
     if bail(state):
         return {}
-    url = state["url"].rstrip("/") + "/"
+    url = _canon(state["url"])
     async with _db.execute(
         "SELECT chunks, embeddings FROM corpora WHERE url=?", (url,)
     ) as cur:
@@ -268,10 +272,12 @@ async def load(state: AgentState) -> AgentState:
     }
 
 
-def _cos(a: list[float], b: list[float]) -> float:
+def _norm(v: list[float]) -> float:
+    return math.sqrt(sum(x * x for x in v))
+
+
+def _cos(a: list[float], na: float, b: list[float], nb: float) -> float:
     dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(y * y for y in b))
     return dot / (na * nb) if na and nb else 0.0
 
 
@@ -305,15 +311,6 @@ def _terms(text: str) -> set[str]:
     return {w for w in _WORD.findall(text.lower()) if len(w) > 2 and w not in _STOPWORDS}
 
 
-def _lexical_score(q_terms: set[str], text: str, idf: dict[str, float]) -> float:
-    """IDF-weighted coverage: rare question terms (cost, pet) outweigh
-    site-ubiquitous ones (the business's own name)."""
-    if not q_terms:
-        return 0.0
-    t_terms = _terms(text)
-    return sum(idf[w] for w in q_terms & t_terms) / sum(idf.values())
-
-
 async def retrieve(state: AgentState) -> AgentState:
     if bail(state):
         return {}
@@ -327,24 +324,34 @@ async def retrieve(state: AgentState) -> AgentState:
         qv = res.json()["data"][0]["embedding"]
 
         # Hybrid score over the whole corpus: embedding similarity plus
-        # stopword-filtered question-term coverage. The lexical stage
-        # rescues chunks whose phrasing diverges from the question but
-        # literally name the entity asked about ("$275 per night" barely
-        # resembles "how much does it cost" in embedding space).
+        # stopword-filtered, IDF-weighted question-term coverage. The
+        # lexical stage rescues chunks whose phrasing diverges from the
+        # question but literally name the entity asked about ("$275 per
+        # night" barely resembles "how much does it cost" in embedding
+        # space); IDF keeps rare terms (cost, pet) outweighing
+        # site-ubiquitous ones (the business's own name).
+        chunks, embs = state["chunks"], state["embeddings"]
         q_terms = _terms(q)
-        n = len(state["chunks"])
-        df = {w: sum(w in _terms(c["text"]) for c in state["chunks"]) for w in q_terms}
+        qn = _norm(qv)
+        c_terms = [_terms(c["text"]) for c in chunks]
+        norms = [_norm(e) for e in embs]
+        n = len(chunks)
+        df = {w: sum(w in t for t in c_terms) for w in q_terms}
         idf = {w: math.log(1 + n / (df[w] or 1)) for w in q_terms}
+        idf_total = sum(idf.values()) or 1
         intents = [(hint, b) for qr, hint, b in _INTENTS if qr.search(q)]
-
-        def score(c: dict[str, Any], e: list[float]) -> float:
-            s = 0.55 * _cos(qv, e) + 0.3 * _lexical_score(q_terms, c["text"], idf)
-            return s + sum(b for hint, b in intents if hint.search(c["text"]))
 
         scored = sorted(
             (
-                {"index": i, "score": score(c, e), "text": c["text"], "source": c["source"]}
-                for i, (c, e) in enumerate(zip(state["chunks"], state["embeddings"]))
+                {
+                    "index": i,
+                    "score": 0.55 * _cos(qv, qn, e, norms[i])
+                    + 0.3 * sum(idf[w] for w in q_terms & c_terms[i]) / idf_total
+                    + sum(b for hint, b in intents if hint.search(c["text"])),
+                    "text": c["text"],
+                    "source": c["source"],
+                }
+                for i, (c, e) in enumerate(zip(chunks, embs))
             ),
             key=lambda r: (-r["score"], r["index"]),
         )
@@ -361,17 +368,20 @@ SYSTEM_PROMPT = (
     "You are the site's concierge answering a visitor directly, using "
     "ONLY the supplied scraped-page context. Speak plainly in first "
     "person as the business (\"we\", \"our\") — never mention \"the "
-    "context\", \"the page\", or that you are reading from a source. If the context mentions any prices, "
-    "packages, offerings, hours, policies, locations, or contacts even "
-    "tangentially related to the question, list each one plainly with "
-    "its exact qualifiers as written (amounts, units, taxes, minimums, "
-    "day or date restrictions, eligibility), and note plainly what "
-    "isn't covered. Only if nothing at all is related, say exactly: "
-    "\"I don't have that information.\" Never invent facts, dates, "
-    "prices, or availability."
+    "context\", \"the page\", or that you are reading from a source. "
+    "If the context mentions any prices, packages, offerings, hours, "
+    "policies, locations, or contacts even tangentially related to the "
+    "question, list each one plainly with its exact qualifiers as "
+    "written (amounts, units, taxes, minimums, day or date "
+    "restrictions, eligibility), and note plainly what isn't covered. "
+    "Only if nothing at all is related, say exactly: \"I don't have "
+    "that information.\" Never invent facts, dates, prices, or "
+    "availability."
 )
 
-# Model refusals are internal sentinels; visitors get a handoff instead.
+# The model's literal refusal is an internal sentinel — the sequential
+# loop keys on it, and visitors get a human handoff instead.
+REFUSAL = "i don't have that information"
 HANDOFF = (
     "I'm sorry — I couldn't find that on our website. "
     "Please give us a call and our team will be happy to help."
@@ -394,7 +404,6 @@ async def answer(state: AgentState) -> AgentState:
     # Try the top chunks one at a time; first substantive answer wins and
     # its source is the citation. All-refusal means the corpus genuinely
     # lacks the fact.
-    refused = "i don't have that information"
     for r in ranked[:ANSWER_TRIES]:
         try:
             res = await http.post(
@@ -412,7 +421,7 @@ async def answer(state: AgentState) -> AgentState:
             text = res.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
             return fail(state, "answer", e)
-        if not text.lower().startswith(refused):
+        if not text.lower().startswith(REFUSAL):
             return {
                 "answer": text,
                 "sources": [r["source"]],
@@ -426,22 +435,17 @@ async def answer(state: AgentState) -> AgentState:
     }
 
 
-def _finish(state: AgentState) -> AgentState:
-    if bail(state):
-        return {}
-    return {"status": "done"}
-
-
 # ------------------------------------------------------------------- app
 
-def _build(nodes: list[tuple[str, Any]], edges: list[tuple[str, str]]) -> Any:
+def _build(nodes: list[tuple[str, Any]]) -> Any:
+    """Linear chain: START -> nodes in order -> END."""
     builder = StateGraph(AgentState)
+    prev = START
     for name, fn in nodes:
         builder.add_node(name, fn)
-    prev = START
-    for src, dst in edges:
-        builder.add_edge(src, dst)
-    builder.add_edge("finish", END)
+        builder.add_edge(prev, name)
+        prev = name
+    builder.add_edge(prev, END)
     return builder.compile(checkpointer=_saver)
 
 
@@ -449,8 +453,7 @@ def _build(nodes: list[tuple[str, Any]], edges: list[tuple[str, str]]) -> Any:
 async def lifespan(app: FastAPI):
     global _index_graph, _query_graph, _saver, _db
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = await aiosqlite.connect(DB_PATH)
-    _saver = AsyncSqliteSaver(conn)
+    _saver = AsyncSqliteSaver(await aiosqlite.connect(DB_PATH))
     _db = await aiosqlite.connect(DB_PATH)
     await _db.execute(
         """CREATE TABLE IF NOT EXISTS corpora(
@@ -460,13 +463,9 @@ async def lifespan(app: FastAPI):
     await _db.commit()
 
     _index_graph = _build(
-        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store), ("finish", _finish)],
-        [(START, "crawl"), ("crawl", "chunk"), ("chunk", "embed"), ("embed", "store"), ("store", "finish")],
+        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
     )
-    _query_graph = _build(
-        [("load", load), ("retrieve", retrieve), ("answer", answer), ("finish", _finish)],
-        [(START, "load"), ("load", "retrieve"), ("retrieve", "answer"), ("answer", "finish")],
-    )
+    _query_graph = _build([("load", load), ("retrieve", retrieve), ("answer", answer)])
     yield
     await http.aclose()
 
@@ -537,13 +536,14 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
-        "SELECT url, title, pages, chunks, indexed_at FROM corpora ORDER BY indexed_at DESC"
+        "SELECT url, title, pages, json_array_length(chunks), indexed_at"
+        " FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunks, indexed_at in cur:
+        async for url, title, pages, chunk_count, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
-                "chunk_count": len(json.loads(chunks)),
+                "chunk_count": chunk_count,
                 "indexed_at": indexed_at,
             })
     return {"sites": out}

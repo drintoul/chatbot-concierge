@@ -170,10 +170,10 @@ services:
     restart: unless-stopped
 
   # ----------------------------------------------------------------- agent
-  # LangGraph orchestration layer: deterministic, checkpointed pipeline
-  #   scrape (firecrawl) -> chunk -> embed (ollama) -> retrieve -> answer
-  # Every run is a persisted state machine — POST /runs, then poll
-  # GET /runs/{id} to watch node-by-node progression.
+  # LangGraph orchestration layer — two deterministic, checkpointed graphs:
+  #   POST /index: crawl (firecrawl) -> chunk -> embed (ollama) -> store
+  #   POST /query: load corpus -> retrieve -> answer (no re-crawl)
+  # Poll GET /runs/{id} to watch node-by-node progression; demo UI at /.
   agent:
     container_name: hustle-stack-agent
     build:

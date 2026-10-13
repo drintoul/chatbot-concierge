@@ -75,7 +75,7 @@
   .skipped { background: rgba(227,197,102,.15); color: var(--warn); }
   .failed { background: rgba(240,136,136,.15); color: var(--bad); }
   .detail { color: var(--dim); font-size: 13px; }
-  #status, .status { color: var(--dim); font-size: 14px; margin-bottom: 12px; min-height: 22px; }
+  .status { color: var(--dim); font-size: 14px; margin-bottom: 12px; min-height: 22px; }
 
   .card {
     margin-top: 16px; padding: 20px 22px; background: var(--panel2);
@@ -214,38 +214,44 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
 const fmt = (d) =>
   [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null,
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
-   d.best != null ? "best " + d.best : null, d.model || null, d.reason || null]
+   d.best != null ? "best " + d.best : null, d.model || null]
     .filter(Boolean).join(" · ");
 
-function makeRunner(statusEl, stepsEl, outEl) {
-  let rendered = 0;
-  function draw(steps) {
-    for (; rendered < steps.length; rendered++) {
-      const s = steps[rendered], el = document.createElement("div");
-      el.className = "step";
-      el.innerHTML = `<span class="node"></span><span class="pill ${s.status}"></span><span class="detail"></span>`;
-      el.children[0].textContent = s.node;
-      el.children[1].textContent = s.status;
-      el.children[2].textContent = fmt(s);
-      stepsEl.appendChild(el);
-    }
+// POST + poll a run to completion; onTick fires per poll with the snapshot.
+async function postAndPoll(endpoint, body, onTick) {
+  const res = await fetch(endpoint, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const { run_id } = await res.json();
+  for (;;) {
+    const st = await (await fetch("/runs/" + encodeURIComponent(run_id))).json();
+    onTick?.(st);
+    if (st.status !== "running") return st;
+    await new Promise(x => setTimeout(x, 900));
   }
+}
+
+// Renders a live step trace into stepsEl; returns a run() for forms.
+function makeRunner(statusEl, stepsEl, outEl) {
   return async function run(endpoint, body) {
-    rendered = 0; stepsEl.innerHTML = ""; outEl.innerHTML = "";
+    stepsEl.innerHTML = ""; outEl.innerHTML = "";
     statusEl.textContent = "starting";
-    const res = await fetch(endpoint, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    let rendered = 0;
+    const st = await postAndPoll(endpoint, body, s => {
+      statusEl.textContent = "running — " + (s.steps?.length || 0) + " node(s) complete";
+      for (; rendered < (s.steps?.length || 0); rendered++) {
+        const s2 = s.steps[rendered], el = document.createElement("div");
+        el.className = "step";
+        el.innerHTML = `<span class="node"></span><span class="pill ${s2.status}"></span><span class="detail"></span>`;
+        el.children[0].textContent = s2.node;
+        el.children[1].textContent = s2.status;
+        el.children[2].textContent = fmt(s2);
+        stepsEl.appendChild(el);
+      }
     });
-    if (!res.ok) throw new Error(await res.text());
-    const { run_id } = await res.json();
-    for (;;) {
-      const r = await fetch("/runs/" + encodeURIComponent(run_id));
-      const st = await r.json();
-      statusEl.textContent = "running — " + (st.steps?.length || 0) + " node(s) complete";
-      draw(st.steps || []);
-      if (st.status !== "running") { statusEl.textContent = st.status; return st; }
-      await new Promise(x => setTimeout(x, 900));
-    }
+    statusEl.textContent = st.status;
+    return st;
   };
 }
 
@@ -283,11 +289,11 @@ function treeEl(node, depth = 0) {
   const ul = document.createElement("ul");
   ul.className = depth === 0 ? "tree" : "";
   for (const [seg, child] of Object.entries(node.children).sort(([a],[b]) => a.localeCompare(b))) {
+    const kids = Object.entries(child.children);
     const li = document.createElement("li");
-    const isLeaf = child.leaf && Object.keys(child.children).length === 0;
     const span = document.createElement("span");
-    span.className = "seg" + (isLeaf ? " leaf" : "");
-    span.textContent = seg + (Object.keys(child.children).length ? "/" : "");
+    span.className = "seg" + (child.leaf && !kids.length ? " leaf" : "");
+    span.textContent = seg + (kids.length ? "/" : "");
     li.appendChild(span);
     if (child.title) {
       const t = document.createElement("span");
@@ -295,7 +301,7 @@ function treeEl(node, depth = 0) {
       t.textContent = child.title;
       li.appendChild(t);
     }
-    if (Object.keys(child.children).length) li.appendChild(treeEl(child, depth + 1));
+    if (kids.length) li.appendChild(treeEl(child, depth + 1));
     ul.appendChild(li);
   }
   return ul;
@@ -341,7 +347,9 @@ async function loadSites() {
     list.appendChild(wrap);
   }
   for (const sel of ["q-site", "c-site"]) {
-    $(sel).innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
+    const el = $(sel), prev = el.value;
+    el.innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
+    if (sites.some(s => s.url === prev)) el.value = prev;
   }
 }
 loadSites();
@@ -395,8 +403,7 @@ $("f-chat").addEventListener("submit", async (e) => {
   bubble("user", text.replace(/</g, "&lt;"));
   const typing = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
   try {
-    const st = await makeRunner({ textContent: "" }, { innerHTML: "", appendChild(){} }, { innerHTML: "" })("/query",
-      { url: $("c-site").value, question: text });
+    const st = await postAndPoll("/query", { url: $("c-site").value, question: text });
     typing.innerHTML = (st.answer || st.error || "…").replace(/</g, "&lt;").replace(/\n/g, "<br>") +
       (st.sources?.length ? `<div class="srcs">source: <a href="${st.sources[0]}" target="_blank">${st.sources[0]}</a></div>` : "");
   } catch (err) {
