@@ -738,6 +738,18 @@ async def list_sites() -> dict[str, Any]:
     return {"sites": out}
 
 
+@app.delete("/sites")
+async def delete_site(url: str) -> dict[str, Any]:
+    """Remove a corpus and its audit events."""
+    canon = _canon(url)
+    async with _db.execute("DELETE FROM corpora WHERE url=?", (canon,)) as cur:
+        corpus = cur.rowcount
+    async with _db.execute("DELETE FROM events WHERE url=?", (canon,)) as cur:
+        evts = cur.rowcount
+    await _db.commit()
+    return {"deleted": corpus > 0, "events_deleted": evts}
+
+
 @app.get("/audit")
 async def list_audit(limit: int = 50, url: str | None = None) -> dict[str, Any]:
     out = []

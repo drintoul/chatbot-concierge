@@ -110,3 +110,18 @@ test("query workflow answers from the stored corpus", async () => {
   const again = await ctx.get(`${AGENT}/runs/${encodeURIComponent(run_id)}`);
   expect((await again.json()).status).toBe("done");
 });
+
+// The suite seeds example.com into corpora/events — clean up so test
+// runs don't pollute the demo's indexed sites or audit log.
+test("delete site removes the test corpus and its audit events", async () => {
+  const ctx = await request.newContext();
+  const res = await ctx.delete(`${AGENT}/sites?url=${encodeURIComponent(SITE)}`);
+  expect(res.ok(), `delete failed: ${await res.text()}`).toBeTruthy();
+  const body = (await res.json()) as { deleted: boolean };
+  expect(body.deleted).toBe(true);
+
+  const sites = (await (await ctx.get(`${AGENT}/sites`)).json()) as {
+    sites: { url: string }[];
+  };
+  expect(sites.sites.some((s) => s.url === SITE)).toBe(false);
+});
