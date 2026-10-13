@@ -393,7 +393,7 @@ REFUSAL = "i don't have that information"
 # don't have a bowling alley" from being swallowed.
 _SOFT_REFUSAL = re.compile(
     r"\b(don'?t|do not|doesn'?t|does not|cannot|can'?t|couldn'?t|no)\s+"
-    r"(have\s+|got\s+)?(enough\s+|any\s+|specific\s+|detailed\s+)?"
+    r"(have\s+|got\s+)?(enough\s+|any\s+|specific\s+|detailed\s+|that\s+|the\s+)?"
     r"(information|info|details?|data|knowledge|mention)\b|"
     r"\b(not|isn'?t|is not|aren'?t|are not|wasn'?t)\s+"
     r"(mentioned|provided|listed|stated|included|specified|found|available)\b|"
