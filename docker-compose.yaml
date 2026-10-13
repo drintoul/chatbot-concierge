@@ -15,22 +15,22 @@ x-fc-env: &fc-env
   # NB: user/db must stay "postgres" — nuq-postgres's init SQL (pg_cron) is
   # bound to that database and fails under a custom POSTGRES_DB.
   POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD:-firecrawl_dev_password}
+  POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD}
   POSTGRES_DB: postgres
   POSTGRES_HOST: firecrawl-postgres
   POSTGRES_PORT: "5432"
   # No API key on the trusted local bridge network. Set USE_DB_AUTHENTICATION
   # plus real credentials before exposing this beyond localhost.
   USE_DB_AUTHENTICATION: "false"
-  NUM_WORKERS_PER_QUEUE: ${FC_NUM_WORKERS:-4}
-  CRAWL_CONCURRENT_REQUESTS: ${FC_CONCURRENT_REQUESTS:-5}
-  MAX_CONCURRENT_JOBS: ${FC_MAX_JOBS:-3}
-  BROWSER_POOL_SIZE: ${FC_BROWSER_POOL:-3}
+  NUM_WORKERS_PER_QUEUE: ${FC_NUM_WORKERS}
+  CRAWL_CONCURRENT_REQUESTS: ${FC_CONCURRENT_REQUESTS}
+  MAX_CONCURRENT_JOBS: ${FC_MAX_JOBS}
+  BROWSER_POOL_SIZE: ${FC_BROWSER_POOL}
   # Point Firecrawl's LLM features (extract, etc.) at the project's Ollama.
   OLLAMA_BASE_URL: http://ollama:11434
-  MODEL_NAME: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
-  MODEL_EMBEDDING_NAME: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
-  LOGGING_LEVEL: ${FC_LOG_LEVEL:-info}
+  MODEL_NAME: ${OLLAMA_CHAT_MODEL}
+  MODEL_EMBEDDING_NAME: ${OLLAMA_EMBED_MODEL}
+  LOGGING_LEVEL: ${FC_LOG_LEVEL}
   ENV: local
 
 services:
@@ -42,7 +42,7 @@ services:
       - ollama-models:/root/.ollama
     ports:
       # Host's own ollama usually squats on 11434 — publish on 11435 instead.
-      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
+      - "127.0.0.1:${OLLAMA_PORT}:11434"
     healthcheck:
       test: ["CMD", "ollama", "ps"]
       interval: 5s
@@ -68,8 +68,8 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.2:3b}
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
     entrypoint: ["sh", "-c"]
     command:
       - 'ollama pull "$$OLLAMA_CHAT_MODEL" && ollama pull "$$OLLAMA_EMBED_MODEL"'
@@ -98,7 +98,7 @@ services:
       ollama:
         condition: service_healthy
     ports:
-      - "127.0.0.1:${FIRECRAWL_PORT:-3002}:3002"
+      - "127.0.0.1:${FIRECRAWL_PORT}:3002"
     ulimits:
       nofile:
         soft: 65535
@@ -122,8 +122,8 @@ services:
     image: ghcr.io/firecrawl/playwright-service:latest
     environment:
       PORT: "3000"
-      BLOCK_MEDIA: ${FC_BLOCK_MEDIA:-true}
-      MAX_CONCURRENT_PAGES: ${FC_CONCURRENT_REQUESTS:-5}
+      BLOCK_MEDIA: ${FC_BLOCK_MEDIA}
+      MAX_CONCURRENT_PAGES: ${FC_CONCURRENT_REQUESTS}
     tmpfs:
       - /tmp
     restart: unless-stopped
@@ -158,7 +158,7 @@ services:
     image: ghcr.io/firecrawl/nuq-postgres:latest
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD:-firecrawl_dev_password}
+      POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     volumes:
       - fc-pg-data:/var/lib/postgresql/data

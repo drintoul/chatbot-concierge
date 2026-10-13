@@ -13,7 +13,7 @@ playwright, or firecrawl are used. To move to a VPS, copy this repo, set
 ## Quick start
 
 ```bash
-cp .env.example .env        # optional — defaults work out of the box
+cp .env.example .env        # required — compose has no built-in fallbacks
 docker compose up -d
 ```
 
