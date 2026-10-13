@@ -24,6 +24,11 @@ optional contact info used in handoff replies and per-run page/depth limits.*
 *④ Audit — every visitor question logged with its outcome (grounded /
 handoff / error), latency, answer, and sources; filterable per site.*
 
+![Chatbot tab](docs/chatbot-tab.png)
+
+*③ Chatbot — preview of the embeddable widget: a launcher bubble floats
+bottom-right over the host page and opens the concierge popup.*
+
 ## Quick start
 
 ```bash
