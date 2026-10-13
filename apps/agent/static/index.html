@@ -218,7 +218,10 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
 const fmt = (d) =>
   [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null,
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
-   d.best != null ? "best " + d.best : null, d.model || null]
+   d.best != null ? "best " + d.best : null, d.model || null,
+   d.attempt != null ? "attempt " + d.attempt : null,
+   d.grounded != null ? (d.grounded ? "grounded" : "not grounded") : null,
+   d.reason || d.verdict || null]
     .filter(Boolean).join(" · ");
 
 // POST + poll a run to completion; onTick fires per poll with the snapshot.

@@ -100,7 +100,10 @@ test("query workflow answers from the stored corpus", async () => {
   expect(state.error).toBeNull();
   expect(state.status).toBe("done");
   expect(state.answer ?? "").toMatch(/example/i);
-  expect(state.steps.map((s) => s.node)).toEqual(["start", "load", "retrieve", "answer"]);
+  // answer → verify loop: verify is always last; answer/verify may repeat.
+  const nodes = state.steps.map((s) => s.node);
+  expect(nodes.slice(0, 3)).toEqual(["start", "load", "retrieve"]);
+  expect(nodes[nodes.length - 1]).toBe("verify");
   expect(state.sources?.length ?? 0).toBeGreaterThan(0);
 
   // Run state persists — checkpointed, inspectable after the fact.

@@ -64,6 +64,11 @@ class AgentState(TypedDict, total=False):
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
     ranked: list[dict[str, Any]]
+    candidate: str | None               # unverified answer draft
+    cand_text: str                      # chunk text the candidate drew from
+    cand_source: str
+    try_idx: int                        # next ranked chunk to attempt
+    grounded: bool                      # verify judged the candidate supported
     sources: list[str]
     answer: str | None
     # operator.add reducer: every node appends a trace entry.
@@ -419,63 +424,123 @@ def _handoff(phone: str | None) -> str:
 
 
 async def answer(state: AgentState) -> AgentState:
+    """Draft a candidate from the next ranked chunk — single-chunk
+    contexts are the only ones this model size handles reliably
+    (verified empirically). It does NOT ship: verify decides that."""
     if bail(state):
         return {}
     t0 = time.time()
     ranked = state.get("ranked") or []
-    if not ranked:
-        return {
-            "answer": _handoff(state.get("phone")),
-            "status": "done",
-            "steps": [step("answer", "ok", grounded=False)],
-        }
-    # Single-chunk answering: this model size refuses whenever the context
-    # mixes chunks that don't all contain the answer — verified empirically.
-    # Try the top chunks one at a time; first substantive answer wins and
-    # its source is the citation. All-refusal means the corpus genuinely
-    # lacks the fact.
-    for r in ranked[:ANSWER_TRIES]:
-        try:
-            res = await http.post(
-                f"{OLLAMA}/v1/chat/completions",
-                json={
-                    "model": CHAT_MODEL,
-                    "temperature": 0,  # deterministic decode
-                    "messages": [
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": f"CONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
-                    ],
-                },
-            )
-            res.raise_for_status()
-            text = res.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
-            return fail(state, "answer", e)
-        if not _is_refusal(text):
-            return {
-                "answer": text,
-                "sources": [r["source"]],
-                "status": "done",
-                "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"])],
-            }
+    try_idx = state.get("try_idx", 0)
+    if not ranked or try_idx >= min(len(ranked), ANSWER_TRIES):
+        return {"candidate": None, "steps": [step("answer", "ok", tried=try_idx)]}
+    r = ranked[try_idx]
+    try:
+        res = await http.post(
+            f"{OLLAMA}/v1/chat/completions",
+            json={
+                "model": CHAT_MODEL,
+                "temperature": 0,  # deterministic decode
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"CONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
+                ],
+            },
+        )
+        res.raise_for_status()
+        text = res.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        return fail(state, "answer", e)
     return {
-        "answer": _handoff(state.get("phone")),
+        "candidate": text,
+        "cand_text": r["text"],
+        "cand_source": r["source"],
+        "try_idx": try_idx + 1,
+        "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"], attempt=try_idx + 1)],
+    }
+
+
+# Grounding pass: every factual claim in the candidate must appear in
+# the source chunk. Unverifiable content — including absence claims the
+# page doesn't explicitly state — is rejected, never shipped.
+VERIFY_PROMPT = (
+    "You verify whether an answer is supported by a source text. Reply "
+    "with exactly one word: YES only if every factual claim in the "
+    "answer appears in the source (paraphrase is fine — amounts, dates, "
+    "hours, policies, amenities, contacts must match). Reply NO if any "
+    "claim is missing from, contradicted by, or goes beyond the source. "
+    "A claim that something does NOT exist is YES only when the source "
+    "explicitly says so — absence of mention is not support."
+)
+
+
+async def verify(state: AgentState) -> AgentState:
+    """Decide whether the candidate ships, retries, or becomes a
+    handoff. Terminates the loop by setting status=done."""
+    if bail(state):
+        return {}
+    t0 = time.time()
+    cand = state.get("candidate")
+    ranked = state.get("ranked") or []
+    tries_left = state.get("try_idx", 0) < min(len(ranked), ANSWER_TRIES)
+
+    def ungrounded(**detail: Any) -> AgentState:
+        out: AgentState = {
+            "grounded": False,
+            "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=False, **detail)],
+        }
+        if not tries_left:
+            out.update(answer=_handoff(state.get("phone")), status="done")
+        return out
+
+    if not cand:
+        return ungrounded(reason="no candidate")
+    if _is_refusal(cand):
+        return ungrounded(reason="refusal")
+    try:
+        res = await http.post(
+            f"{OLLAMA}/v1/chat/completions",
+            json={
+                "model": CHAT_MODEL,
+                "temperature": 0,
+                "messages": [
+                    {"role": "system", "content": VERIFY_PROMPT},
+                    {"role": "user", "content": f"SOURCE:\n{state['cand_text']}\n\nANSWER:\n{cand}"},
+                ],
+            },
+        )
+        res.raise_for_status()
+        verdict = res.json()["choices"][0]["message"]["content"].strip().lower()
+    except Exception as e:
+        return fail(state, "verify", e)
+    if not verdict.startswith("yes"):
+        return ungrounded(verdict=verdict[:60])
+    return {
+        "answer": cand,
+        "sources": [state["cand_source"]],
         "status": "done",
-        "steps": [step("answer", "ok", grounded=False, tried=min(len(ranked), ANSWER_TRIES))],
+        "grounded": True,
+        "steps": [step("verify", "ok", ms=round((time.time() - t0) * 1000), grounded=True)],
     }
 
 
 # ------------------------------------------------------------------- app
 
-def _build(nodes: list[tuple[str, Any]]) -> Any:
-    """Linear chain: START -> nodes in order -> END."""
+def _build(nodes: list[tuple[str, Any]], retry: str | None = None) -> Any:
+    """Linear chain: START -> nodes in order. With retry, the last node
+    gets a conditional edge back to `retry` until status is terminal."""
     builder = StateGraph(AgentState)
     prev = START
     for name, fn in nodes:
         builder.add_node(name, fn)
         builder.add_edge(prev, name)
         prev = name
-    builder.add_edge(prev, END)
+    if retry:
+        builder.add_conditional_edges(
+            prev, lambda s: END if s.get("status") in ("done", "failed") else retry
+        )
+    else:
+        builder.add_edge(prev, END)
     return builder.compile(checkpointer=_saver)
 
 
@@ -501,7 +566,10 @@ async def lifespan(app: FastAPI):
     _index_graph = _build(
         [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
     )
-    _query_graph = _build([("load", load), ("retrieve", retrieve), ("answer", answer)])
+    _query_graph = _build(
+        [("load", load), ("retrieve", retrieve), ("answer", answer), ("verify", verify)],
+        retry="answer",
+    )
     yield
     await http.aclose()
 
@@ -609,6 +677,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "ranked": [{k: r.get(k) for k in ("index", "score", "source")} for r in (v.get("ranked") or [])],
         "sources": v.get("sources") or [],
         "answer": v.get("answer"),
+        "grounded": v.get("grounded"),
         "error": v.get("error"),
     }
 
