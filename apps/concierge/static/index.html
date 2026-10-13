@@ -153,6 +153,7 @@
     <button class="tab" data-t="query">② Query</button>
     <button class="tab" data-t="chat">③ Chatbot</button>
     <button class="tab" data-t="audit">④ Audit</button>
+    <button class="tab" data-t="sites">⑤ Sites</button>
   </div>
 
   <!-- ================= INDEX ================= -->
@@ -180,11 +181,6 @@
     <div class="status" id="s-index"></div>
     <div class="steps" id="steps-index"></div>
     <div id="out-index"></div>
-
-    <div style="margin-top:28px">
-      <label>Indexed sites</label>
-      <div class="site-list" id="sites"></div>
-    </div>
   </section>
 
   <!-- ================= QUERY ================= -->
@@ -232,15 +228,28 @@
     </div>
     <div id="audit"></div>
   </section>
+
+  <!-- ================= SITES ================= -->
+  <section class="pane" id="pane-sites">
+    <div id="a-head">
+      <div class="grow">
+        <label>Indexed sites</label>
+        <div class="hint">Corpora available to Query and Chatbot — expand a row for its crawl tree.</div>
+      </div>
+      <button class="cta" id="s-refresh" type="button">Refresh</button>
+    </div>
+    <div class="site-list" id="sites"></div>
+  </section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit" };
+const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit", sites: "pane-sites" };
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
   Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
   if (t.dataset.t === "audit") loadAudit();
+  if (t.dataset.t === "sites") loadSites();
 });
 
 // ---------- shared ----------
@@ -492,6 +501,9 @@ async function loadAudit() {
 }
 $("a-refresh").onclick = loadAudit;
 $("a-site").onchange = loadAudit;
+
+// ---------- workflow 5: sites ----------
+$("s-refresh").onclick = loadSites;
 </script>
 </body>
 </html>
