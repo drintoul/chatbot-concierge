@@ -399,8 +399,11 @@ function treeBox(pages, host) {
 }
 
 // ---------- sites ----------
+let siteList = [];
+const tokenFor = u => (siteList.find(s => s.url === u) || {}).token || "";
 async function loadSites() {
   const { sites } = await (await fetch("/sites")).json();
+  siteList = sites;
   sites.sort((a, b) => b.indexed_at - a.indexed_at);        // list: newest first
   const alpha = [...sites].sort((a, b) => a.url.localeCompare(b.url)); // dropdowns: A-Z
   const list = $("sites");
@@ -412,7 +415,8 @@ async function loadSites() {
     const row = document.createElement("div");
     row.className = "site";
     row.innerHTML = `<div class="site-main"><span class="u">${s.url}</span>` +
-      `<span class="m">${s.pages?.length || "?"} pages · ${s.chunk_count} chunks</span>` +
+      `<span class="m">${s.pages?.length || "?"} pages · ${s.chunk_count} chunks` +
+      (s.token ? ` · token <code>${s.token}</code>` : "") + `</span>` +
       (s.phone || s.email
         ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
         : "") +
@@ -489,7 +493,8 @@ $("f-query").addEventListener("submit", async (e) => {
   const btn = e.target.querySelector("button"); btn.disabled = true;
   try {
     const st = await makeRunner($("s-query"), $("steps-query"), $("out-query"))("/query",
-      { url: $("q-site").value, question: $("q-text").value });
+      { url: $("q-site").value, question: $("q-text").value,
+        token: tokenFor($("q-site").value) });
     answerCard($("out-query"), st);
   } catch (err) { $("s-query").textContent = "failed: " + err; }
   btn.disabled = false;
@@ -500,13 +505,15 @@ let widgetBooted = false;
 function bootWidget() {
   if (widgetBooted || !$("c-site").value) return;
   const s = document.createElement("script");
-  s.src = "/static/widget.js";
+  const tk = tokenFor($("c-site").value);
+  s.src = "/static/widget.js" + (tk ? "?token=" + encodeURIComponent(tk) : "");
   s.dataset.url = $("c-site").value;
   document.body.appendChild(s);
   widgetBooted = true;
 }
 $("c-site").onchange = () => {
   window.ConciergeWidget?.setUrl($("c-site").value);
+  window.ConciergeWidget?.setToken(tokenFor($("c-site").value));
   chatBg();
   syncSnippet();
 };
@@ -526,8 +533,9 @@ function syncSnippet() {
   if (name) attrs.push(`data-name="${name.replace(/"/g, "&quot;")}"`);
   if (greet) attrs.push(`data-greeting="${greet.replace(/"/g, "&quot;")}"`);
   if (color && color !== "#34d399") attrs.push(`data-color="${color}"`);
+  const tk = tokenFor(u);
   snippetText = u
-    ? `<script src="${location.origin}/static/widget.js" ${attrs.join(" ")} async><\/script>`
+    ? `<script src="${location.origin}/static/widget.js${tk ? "?token=" + tk : ""}" ${attrs.join(" ")} async><\/script>`
     : "";
   const demo = $("embed-demo");
   demo.innerHTML = "";
@@ -566,7 +574,10 @@ $("e-copy").onclick = async () => {
 ${snippetText}
 
 3. Save and publish. A chat bubble will appear in the bottom-right corner
-   of your site and answer visitors from your indexed content.`;
+   of your site and answer visitors from your indexed content.
+
+The token in the script URL is your widget key — the concierge only answers
+for your site when that token is present.`;
   await navigator.clipboard.writeText(text);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);

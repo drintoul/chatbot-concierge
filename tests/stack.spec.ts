@@ -98,8 +98,20 @@ test("query workflow answers from the stored corpus", async () => {
   const ctx = await request.newContext();
   await indexSite(ctx); // idempotent — rebuilds the corpus
 
+  const { sites } = (await (await ctx.get(`${CHATBOT_CONCIERGE}/sites`)).json()) as {
+    sites: { url: string; token?: string }[];
+  };
+  const token = sites.find((s) => s.url === SITE)?.token;
+  expect(token).toMatch(/^[a-z0-9]{8}$/);
+
+  // Widget key required — wrong or missing token is rejected before a run starts.
+  const bad = await ctx.post(`${CHATBOT_CONCIERGE}/query`, {
+    data: { url: SITE, question: "What is this domain used for?", token: "badtoken" },
+  });
+  expect(bad.status()).toBe(403);
+
   const start = await ctx.post(`${CHATBOT_CONCIERGE}/query`, {
-    data: { url: SITE, question: "What is this domain used for?" },
+    data: { url: SITE, question: "What is this domain used for?", token },
   });
   expect(start.status()).toBe(202);
   const { run_id } = (await start.json()) as { run_id: string };

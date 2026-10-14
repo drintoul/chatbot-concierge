@@ -1,7 +1,9 @@
 /* chatbot-concierge embeddable widget.
  *
- *   <script src="https://HOST/static/widget.js" data-url="https://tenant-site.com/" async></script>
+ *   <script src="https://HOST/static/widget.js?token=abc12345" data-url="https://tenant-site.com/" async></script>
  *
+ * ?token=       per-site key (required — /query rejects without it); also
+ *               accepted as data-token if the src URL can't carry a query
  * data-url      tenant corpus URL (required — what the concierge answers about)
  * data-api      concierge base URL (default: origin this script was loaded from)
  * data-name     title-bar label (default "concierge")
@@ -15,6 +17,8 @@
   var api = (script.getAttribute("data-api") || new URL(script.src).origin).replace(/\/+$/, "");
 
   var opts = {
+    token: new URL(script.src).searchParams.get("token") ||
+           script.getAttribute("data-token") || "",
     url: script.getAttribute("data-url") || "",
     name: script.getAttribute("data-name") || "concierge",
     greeting: script.getAttribute("data-greeting") || "Hi! How can we help?",
@@ -145,10 +149,14 @@
     fetch(api + "/query", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: opts.url, question: q }),
+      body: JSON.stringify({ url: opts.url, question: q, token: opts.token }),
     })
       .then(function (r) { return r.json(); })
       .then(function (start) {
+        if (!start.run_id) {
+          typing.textContent = start.detail || "Request rejected.";
+          return;
+        }
         var runId = start.run_id;
         (function poll() {
           fetch(api + "/runs/" + encodeURIComponent(runId))
@@ -169,6 +177,7 @@
 
   window.ConciergeWidget = {
     setUrl: function (u) { opts.url = u; hostLabel(); },
+    setToken: function (t) { opts.token = t || ""; },
     setVisible: function (v) { host.style.display = v ? "" : "none"; },
     setTheme: function (o) {
       if (o.name != null) opts.name = o.name || "concierge";

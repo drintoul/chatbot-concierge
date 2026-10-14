@@ -19,6 +19,8 @@ import math
 import operator
 import os
 import re
+import secrets
+import string
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -501,6 +503,13 @@ def _canon(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
+def _new_token() -> str:
+    """Per-site widget key — 8 random alphanumeric chars."""
+    return "".join(
+        secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8)
+    )
+
+
 def _site_title(state: ChatbotConciergeState) -> str | None:
     """Site title from the homepage page, not whichever page listed first."""
     pages = state.get("pages") or []
@@ -519,8 +528,8 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
     keep = state.get("keep_contacts")
     await _db.execute(
         f"""INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
-                              screenshot, indexed_at)
-           VALUES(?,?,?,?,?,?,?,?,?)
+                              token, screenshot, indexed_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
              embeddings=excluded.embeddings,
@@ -536,6 +545,7 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
             json.dumps(state["embeddings"]),
             state.get("phone"),
             state.get("email"),
+            _new_token(),
             state.get("screenshot"),
             time.time(),
         ),
@@ -901,7 +911,7 @@ async def lifespan(app: FastAPI):
         """CREATE TABLE IF NOT EXISTS corpora(
              url TEXT PRIMARY KEY, title TEXT, pages TEXT,
              chunks TEXT, embeddings TEXT, phone TEXT, email TEXT,
-             indexed_at REAL)"""
+             token TEXT, indexed_at REAL)"""
     )
     await _db.execute(
         """CREATE TABLE IF NOT EXISTS events(
@@ -913,10 +923,20 @@ async def lifespan(app: FastAPI):
     # Older databases: add any columns introduced after first boot.
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
-    for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB"}.items():
+    for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB",
+                     "token": "TEXT"}.items():
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
+    # Rows indexed before tokens existed get one now.
+    async with _db.execute("SELECT url FROM corpora WHERE token IS NULL") as cur:
+        missing = [r[0] async for r in cur]
+    for u in missing:
+        await _db.execute(
+            "UPDATE corpora SET token=? WHERE url=?", (_new_token(), u)
+        )
+    if missing:
+        await _db.commit()
 
     _index_graph = _build(
         [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
@@ -952,6 +972,7 @@ class IndexRequest(BaseModel):
 class QueryRequest(BaseModel):
     url: HttpUrl
     question: str
+    token: str | None = None  # widget key — must match the corpus's stored token
 
 
 async def _audit(graph, run_id: str, cfg: dict[str, Any]) -> None:
@@ -1026,6 +1047,13 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
 
 @app.post("/query", status_code=202)
 async def start_query(req: QueryRequest) -> dict[str, str]:
+    url = _canon(str(req.url))
+    async with _db.execute(
+        "SELECT token FROM corpora WHERE url=?", (url,)
+    ) as cur:
+        row = await cur.fetchone()
+    if row and req.token != row[0]:
+        raise HTTPException(403, "invalid token for this site")
     run_id = "qry:" + uuid.uuid4().hex
     _pending.add(run_id)
     asyncio.create_task(_run(_query_graph, run_id, {"url": str(req.url), "question": req.question}))
@@ -1036,16 +1064,17 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
-        "SELECT url, title, pages, json_array_length(chunks), phone, email, indexed_at"
-        " FROM corpora ORDER BY indexed_at DESC"
+        "SELECT url, title, pages, json_array_length(chunks), phone, email, token,"
+        " indexed_at FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunk_count, phone, email, indexed_at in cur:
+        async for url, title, pages, chunk_count, phone, email, token, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
                 "chunk_count": chunk_count,
                 "phone": phone,
                 "email": email,
+                "token": token,
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
