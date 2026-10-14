@@ -20,7 +20,6 @@ import operator
 import os
 import re
 import secrets
-import string
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -503,15 +502,41 @@ def _canon(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
-# No lookalike glyphs: drops digits 0/1/5 and letters I/L/O/S — a token
-# read off a screenshot or email can't be mis-transcribed.
-_TOKEN_ALPHABET = "".join(c for c in string.ascii_uppercase if c not in "ILOS") + "2346789"
-_TOKEN_RE = re.compile(r"[A-HJ-KM-NP-RT-Z2346789]{8}")
+# Widget keys are friendly words — 6-8 chars, easy to say over the phone,
+# nothing confrontational. Small keyspace vs random glyphs (~140 words),
+# acceptable for dev/demo; production should rate-limit /query regardless.
+_TOKEN_WORDS = (
+    "SALMON HARBOUR MEADOW SUNSET ORCHARD GARDEN HARVEST PACIFIC ALPINE SUMMIT "
+    "FOREST WILLOW POPLAR SPRUCE COTTON COTTAGE LANTERN MEADOWS BREEZE BREEZY "
+    "MELLOW GENTLE KINDLY WARMTH COASTAL ISLAND LAGOON HARBOR ANCHOR BEACON "
+    "SHELTER CHALET TAVERN SUPPER DINNER PICNIC BRUNCH BAKERY COFFEE JUNIPER "
+    "CLOVER LAVENDER ROSEMARY SAFFRON VANILLA CARAMEL MAPLES TRAILS PATHWAY "
+    "JOURNEY VOYAGE TRAVEL WANDER ROAMER RAMBLE STROLL MEANDER WELCOME BONJOUR "
+    "CHEERS TOASTY FESTIVE JOYFUL PEACHY SMILEY CLEVER BRIGHT GOLDEN SILVER "
+    "COPPER BRONZE EMERALD JASPER GARNET SUNDAE WAFFLE BISCUIT MUFFIN PRETZEL "
+    "CRUMPET NOODLE DUMPLING NOODLES PICKLE RELISH SPROUT TURNIP CARROT POTATO "
+    "TOMATO CHERRY BANANA PAPAYA APRICOT PEACHES BERRIES ORCHID DAHLIA CROCUS "
+    "ZINNIA VIOLET MARIGOLD MAGNOLIA WISTERIA AZALEA PADDLE SAILOR REGATTA "
+    "SEASIDE LAKESIDE MARINA TUGBOAT SCHOONER CLIPPER DINGHY ESTUARY CHANNEL "
+    "CURRENT PEBBLE BOULDER GRANITE BASALT CEDARS THICKET BRAMBLE THISTLE "
+    "HEATHER CYPRESS SEQUOIA ARBUTUS MADRONE BANYAN"
+).split()
+_TOKEN_RE = re.compile(r"[A-Z]{6,8}")
 
 
 def _new_token() -> str:
-    """Per-site widget key — 8 random unambiguous uppercase chars."""
-    return "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(8))
+    return secrets.choice(_TOKEN_WORDS)
+
+
+async def _unused_token() -> str:
+    """Word keyspace is small — always roll against existing tokens."""
+    async with _db.execute("SELECT token FROM corpora") as cur:
+        used = {r[0] async for r in cur}
+    while True:
+        t = _new_token()
+        if t not in used:
+            used.add(t)
+            return t
 
 
 def _site_title(state: ChatbotConciergeState) -> str | None:
@@ -549,7 +574,7 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
             json.dumps(state["embeddings"]),
             state.get("phone"),
             state.get("email"),
-            _new_token(),
+            await _unused_token(),
             state.get("screenshot"),
             time.time(),
         ),
@@ -973,12 +998,12 @@ async def lifespan(app: FastAPI):
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
-    # Rows with no token (or an old lowercase charset one) get a fresh one.
+    # Rows with no token (or an old charset one) get a fresh word.
     async with _db.execute("SELECT url, token FROM corpora") as cur:
         stale = [r[0] async for r in cur if not r[1] or not _TOKEN_RE.fullmatch(r[1])]
     for u in stale:
         await _db.execute(
-            "UPDATE corpora SET token=? WHERE url=?", (_new_token(), u)
+            "UPDATE corpora SET token=? WHERE url=?", (await _unused_token(), u)
         )
     if stale:
         await _db.commit()
@@ -1093,11 +1118,12 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
 @app.post("/query", status_code=202)
 async def start_query(req: QueryRequest) -> dict[str, str]:
     url = _canon(str(req.url))
+    token = (req.token or "").strip().upper()
     async with _db.execute(
         "SELECT token FROM corpora WHERE url=?", (url,)
     ) as cur:
         row = await cur.fetchone()
-    if row and req.token != row[0]:
+    if row and token != row[0]:
         raise HTTPException(403, "invalid token for this site")
     run_id = "qry:" + uuid.uuid4().hex
     _pending.add(run_id)
@@ -1138,7 +1164,7 @@ async def widget_config(token: str) -> dict[str, Any]:
     its site URL and saved theming. Token is the lookup key, so nothing else
     needs to be in the tag."""
     async with _db.execute(
-        "SELECT url, widget FROM corpora WHERE token=?", (token,)
+        "SELECT url, widget FROM corpora WHERE token=?", (token.strip().upper(),)
     ) as cur:
         row = await cur.fetchone()
     if not row:

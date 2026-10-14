@@ -102,7 +102,7 @@ test("query workflow answers from the stored corpus", async () => {
     sites: { url: string; token?: string }[];
   };
   const token = sites.find((s) => s.url === SITE)?.token;
-  expect(token).toMatch(/^[A-HJ-KM-NP-RT-Z2346789]{8}$/);
+  expect(token).toMatch(/^[A-Z]{6,8}$/);
 
   // Widget key required — wrong or missing token is rejected before a run starts.
   const bad = await ctx.post(`${CHATBOT_CONCIERGE}/query`, {
