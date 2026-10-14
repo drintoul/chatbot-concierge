@@ -182,6 +182,10 @@
         <label for="i-email">Contact email <span style="text-transform:none">(optional — same)</span></label>
         <input id="i-email" type="email" autocomplete="off">
       </div>
+      <div>
+        <label for="i-tz">Business timezone <span style="text-transform:none">(for "what time do you close tonight"-class questions)</span></label>
+        <select id="i-tz"></select>
+      </div>
       <button class="cta" type="submit">Index site</button>
       <div class="hint">One-time per site: crawl → chunk → embed → store. Re-run anytime to refresh.</div>
     </form>
@@ -422,7 +426,8 @@ async function loadSites() {
     row.className = "site";
     row.innerHTML = `<div class="site-main"><span class="u">${s.url}</span>` +
       `<span class="m">${s.pages?.length || "?"} pages · ${s.chunk_count} chunks` +
-      (s.token ? ` · token <code>${s.token}</code>` : "") + `</span>` +
+      (s.token ? ` · token <code>${s.token}</code>` : "") +
+      (s.tz ? ` · ${s.tz}` : "") + `</span>` +
       (s.phone || s.email
         ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
         : "") +
@@ -434,6 +439,7 @@ async function loadSites() {
       reBtn.disabled = true;
       try {
         const body = { url: s.url, keep_contacts: true };
+        if (s.tz) body.tz = s.tz;
         // Stored count keeps a big corpus big — but floor it at the default
         // so a pathologically small index can't trap itself at limit=1.
         if (s.pages?.length) body.limit = Math.max(50, s.pages.length);
@@ -476,6 +482,16 @@ async function loadSites() {
 }
 loadSites();
 
+// Timezone dropdown — canonical US/CA zones from the backend's tzdata.
+(async () => {
+  try {
+    const r = await fetch("/timezones");
+    const d = await r.json();
+    $("i-tz").innerHTML = d.timezones
+      .map(t => `<option value="${t.zone}"${t.zone === d.default ? " selected" : ""}>${t.label}</option>`).join("");
+  } catch { $("i-tz").innerHTML = `<option value="">(service default)</option>`; }
+})();
+
 // ---------- workflow 1: index ----------
 $("f-index").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -488,6 +504,8 @@ $("f-index").addEventListener("submit", async (e) => {
     if (ph) body.phone = ph;
     const em = $("i-email").value.trim();
     if (em) body.email = em;
+    const tz = $("i-tz").value;
+    if (tz) body.tz = tz;
     const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", body);
     if (st.status === "done") {
       const c = document.createElement("div");

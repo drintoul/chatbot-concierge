@@ -47,8 +47,81 @@ CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("CHATBOT_CONCIERGE_DB_PATH", "/data/langgraph.db")
 # Business-local timezone for resolving "tonight/this weekend" — containers
-# run UTC, which is already tomorrow for Pacific evenings.
+# run UTC, which is already tomorrow for Pacific evenings. Service-level
+# default; each corpus can carry its own `tz` chosen at index time.
 TZ = ZoneInfo(os.environ.get("TZ", "UTC"))
+TZ_NAME = os.environ.get("TZ", "UTC")
+
+# Countries whose zones the index form offers: US + Canada proper, plus US
+# territories (PR/VI/GU/AS/MP) which are "timezones in the United States".
+_TZ_COUNTRIES = frozenset({"US", "CA", "PR", "VI", "GU", "AS", "MP"})
+
+
+# Well-known Canadian zones that exist as link aliases (not zone.tab rows) —
+# Montreal is the one customers will actually look for.
+_EXTRA_ZONES = {
+    "America/Pangnirtung": -65.71, "America/Montreal": -73.57,
+    "America/Nipigon": -88.27, "America/Thunder_Bay": -89.25,
+    "America/Rainy_River": -94.57,
+}
+
+
+def _zone_lon(coord: str) -> float:
+    """Longitude out of a zone.tab coordinate pair ("+4339-07923").
+    Dateline-crossing zones (Guam, Saipan) map past -180 so they sort
+    west of Alaska on an east→west list."""
+    i = min(j for j in (coord.find("+", 1), coord.find("-", 1)) if j > 0)
+    raw = coord[i:]
+    sign = 1 if raw[0] == "+" else -1
+    deg, rest = int(raw[1:4]), raw[4:]
+    lon = sign * (deg + int(rest[:2] or 0) / 60 + int(rest[2:4] or 0) / 3600)
+    return lon if lon <= 0 else lon - 360
+
+
+def _selectable_timezones() -> list[dict[str, Any]]:
+    """Canonical US/CA zones (plus a few link aliases for major cities),
+    read from the shipped tzdata so newly-created zones appear when the
+    package updates. Ordered Canada-first, then east→west by longitude.
+    Canadian zones display as "Canada/<city>" — the stored value stays the
+    canonical America/* name."""
+    import tzdata  # bundled zone files; also try the OS copy as fallback
+    candidates = [
+        os.path.join(os.path.dirname(tzdata.__file__), "zoneinfo", "zone.tab"),
+        "/usr/share/zoneinfo/zone.tab",
+    ]
+    entries: dict[str, tuple[str, float]] = {}
+    for tab in candidates:
+        try:
+            for line in open(tab):
+                if line.startswith("#"):
+                    continue
+                p = line.strip().split("\t")
+                if len(p) >= 3 and p[0] in _TZ_COUNTRIES:
+                    entries[p[2]] = (p[0], _zone_lon(p[1]))
+            if entries:
+                break
+        except OSError:
+            continue
+    for zone, lon in _EXTRA_ZONES.items():
+        try:
+            ZoneInfo(zone)
+            entries.setdefault(zone, ("CA", lon))
+        except Exception:
+            pass
+    if not entries:
+        return [{"zone": TZ_NAME, "label": TZ_NAME}]
+    out = [
+        {
+            "zone": zone,
+            "label": ("Canada/" + zone.split("/", 1)[1])
+                     if country == "CA" and zone.startswith("America/") else zone,
+            "country": country,
+            "lon": lon,
+        }
+        for zone, (country, lon) in entries.items()
+    ]
+    out.sort(key=lambda r: (r["country"] != "CA", -r["lon"], r["zone"]))
+    return out
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
@@ -75,6 +148,7 @@ class ChatbotConciergeState(TypedDict, total=False):
     phone: str | None                    # operator-provided contact number
     email: str | None                    # operator-provided contact email
     keep_contacts: bool                  # store keeps existing phone/email
+    tz: str | None                       # business-local IANA zone for "today"
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
     screenshot: bytes | None             # homepage PNG captured during crawl
@@ -591,14 +665,15 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
     keep = state.get("keep_contacts")
     await _db.execute(
         f"""INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
-                              token, screenshot, indexed_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?)
+                              token, screenshot, tz, indexed_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
              embeddings=excluded.embeddings,
              phone={"phone" if keep else "excluded.phone"},
              email={"email" if keep else "excluded.email"},
              screenshot=excluded.screenshot,
+             tz=COALESCE(excluded.tz, corpora.tz),
              indexed_at=excluded.indexed_at""",
         (
             url,
@@ -610,6 +685,7 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
             state.get("email"),
             await _unused_token(),
             state.get("screenshot"),
+            state.get("tz"),
             time.time(),
         ),
     )
@@ -628,7 +704,7 @@ async def load(state: ChatbotConciergeState) -> ChatbotConciergeState:
         return {}
     url = _canon(state["url"])
     async with _db.execute(
-        "SELECT chunks, embeddings, phone, email FROM corpora WHERE url=?", (url,)
+        "SELECT chunks, embeddings, phone, email, tz FROM corpora WHERE url=?", (url,)
     ) as cur:
         row = await cur.fetchone()
     if not row:
@@ -638,6 +714,7 @@ async def load(state: ChatbotConciergeState) -> ChatbotConciergeState:
         "embeddings": json.loads(row[1]),
         "phone": row[2],
         "email": row[3],
+        "tz": row[4],
         "steps": [step("load", "ok", url=url)],
     }
 
@@ -878,6 +955,15 @@ def _is_refusal(text: str) -> bool:
     return head.startswith(REFUSAL) or bool(_SOFT_REFUSAL.search(head))
 
 
+def _site_tz(state: ChatbotConciergeState) -> ZoneInfo:
+    """The corpus's stored zone, else the service default. Bad values can't
+    reach here (validated at index time), but stay safe anyway."""
+    try:
+        return ZoneInfo(state["tz"]) if state.get("tz") else TZ
+    except Exception:
+        return TZ
+
+
 def _handoff(phone: str | None, email: str | None) -> str:
     if phone and email:
         contact = f"Please give us a call at {phone} or email us at {email}"
@@ -924,8 +1010,9 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     # TODAY pins "tonight/today/tomorrow/this weekend" to a
                     # real weekday — without it the model guesses one and the
-                    # verify pass can't catch the invented premise.
-                    {"role": "user", "content": f"TODAY: {datetime.now(TZ):%A, %B %-d, %Y}\n\nCONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
+                    # verify pass can't catch the invented premise. Per-site
+                    # tz falls back to the service-level TZ.
+                    {"role": "user", "content": f"TODAY: {datetime.now(_site_tz(state)):%A, %B %-d, %Y}\n\nCONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
                 ],
             },
         )
@@ -949,10 +1036,15 @@ VERIFY_PROMPT = (
     "You verify whether an answer is supported by a source text. Reply "
     "with exactly one word: YES only if every factual claim in the "
     "answer appears in the source (paraphrase is fine — amounts, dates, "
-    "hours, policies, amenities, contacts must match). Reply NO if any "
-    "claim is missing from, contradicted by, or goes beyond the source. "
-    "A claim that something does NOT exist is YES only when the source "
-    "explicitly says so — absence of mention is not support."
+    "hours, policies, amenities, contacts must match) AND the source is "
+    "actually about the subject the question asks. Information about a "
+    "different business, place, event, or entity is not support even "
+    "when the claims match it — a museum's winter hours don't answer "
+    "a question about the lodge. Reply NO if any claim is missing "
+    "from, contradicted by, or goes beyond the source, or if the "
+    "source answers a different subject. A claim that something does "
+    "NOT exist is YES only when the source explicitly says so — "
+    "absence of mention is not support."
 )
 
 
@@ -994,7 +1086,7 @@ async def verify(state: ChatbotConciergeState) -> ChatbotConciergeState:
                 "temperature": 0,
                 "messages": [
                     {"role": "system", "content": VERIFY_PROMPT},
-                    {"role": "user", "content": f"SOURCE:\n{state['cand_text']}\n\nANSWER:\n{cand}"},
+                    {"role": "user", "content": f"QUESTION: {state['question']}\n\nSOURCE:\n{state['cand_text']}\n\nANSWER:\n{cand}"},
                 ],
             },
         )
@@ -1056,7 +1148,7 @@ async def lifespan(app: FastAPI):
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
     for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB",
-                     "token": "TEXT", "widget": "TEXT"}.items():
+                     "token": "TEXT", "widget": "TEXT", "tz": "TEXT"}.items():
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
@@ -1098,6 +1190,7 @@ class IndexRequest(BaseModel):
     limit: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_LIMIT when set
     phone: str | None = None  # contact number for handoff answers
     email: str | None = None  # contact email for handoff answers
+    tz: str | None = None     # business-local zone for "tonight"-class questions
     keep_contacts: bool = False  # preserve existing phone/email on reindex
 
 
@@ -1161,8 +1254,21 @@ async def index_page() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
+@app.get("/timezones")
+async def timezones() -> dict[str, Any]:
+    """US/CA zones for the index-form dropdown — sourced from the shipped
+    tzdata so future zone creations show up on package upgrade. Ordered
+    Canada-first, east→west; labels show "Canada/<city>" for CA zones."""
+    zones = _selectable_timezones()
+    names = {z["zone"] for z in zones}
+    return {"timezones": zones,
+            "default": TZ_NAME if TZ_NAME in names else "America/Vancouver"}
+
+
 @app.post("/index", status_code=202)
 async def start_index(req: IndexRequest) -> dict[str, str]:
+    if req.tz and req.tz not in {z["zone"] for z in _selectable_timezones()}:
+        raise HTTPException(422, f"tz must be a US/Canada zone from /timezones, got {req.tz!r}")
     run_id = "idx:" + uuid.uuid4().hex
     _pending.add(run_id)
     initial: ChatbotConciergeState = {"url": str(req.url)}
@@ -1172,6 +1278,8 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
         initial["phone"] = req.phone.strip() or None
     if req.email:
         initial["email"] = req.email.strip() or None
+    if req.tz:
+        initial["tz"] = req.tz
     initial["keep_contacts"] = req.keep_contacts
     asyncio.create_task(_run(_index_graph, run_id, initial))
     return {"run_id": run_id, "status": "running"}
@@ -1240,9 +1348,9 @@ async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
         "SELECT url, title, pages, json_array_length(chunks), phone, email, token,"
-        " widget, indexed_at FROM corpora ORDER BY indexed_at DESC"
+        " widget, tz, indexed_at FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunk_count, phone, email, token, widget, indexed_at in cur:
+        async for url, title, pages, chunk_count, phone, email, token, widget, tz, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
@@ -1251,6 +1359,7 @@ async def list_sites() -> dict[str, Any]:
                 "email": email,
                 "token": token,
                 "widget": json.loads(widget) if widget else {},
+                "tz": tz,
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
