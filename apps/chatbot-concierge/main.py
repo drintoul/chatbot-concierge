@@ -588,6 +588,8 @@ def _cos(a: list[float], na: float, b: list[float], nb: float) -> float:
     return dot / (na * nb) if na and nb else 0.0
 
 
+_HOURS_Q = re.compile(r"\b(hours?|open|close|check.?in|check.?out|when)\b", re.I)
+
 # Intent hints: (question pattern, content-marker pattern, boost). Domain-
 # agnostic — a cost question deserves chunks that literally contain prices
 # on ANY site; embedding similarity alone misses this paraphrase gap.
@@ -598,7 +600,7 @@ _INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
         0.15,
     ),
     (
-        re.compile(r"\b(hours?|open|close|check.?in|check.?out|when)\b", re.I),
+        _HOURS_Q,
         re.compile(r"\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b(mon|tue|wed|thu|fri|sat|sun)(day)?\b", re.I),
         0.10,
     ),
@@ -620,6 +622,32 @@ _CORE_PATH = re.compile(
     re.I,
 )
 CORE_BOOST = 0.12
+
+# Mirror of _CORE_PATH: recurring-content paths (events, blogs, galleries,
+# area pages) are full of times/dates/prices but answer a *different*
+# question. On intent questions they get pushed down — unless the question
+# itself is about events ("when is trivia night" SHOULD find event pages).
+_SERIES_PATH = re.compile(
+    r"^/(events?|good-?times|blogs?|posts?|news|calendar|promos?|"
+    r"galler|areas|shows?|specials?)([/_-]|$)",
+    re.I,
+)
+SERIES_PENALTY = 0.10
+_EVENTY_Q = re.compile(
+    r"\b(events?|trivia|fests?|concerts?|shows?|nights?|games?|"
+    r"live music|happening|going on|schedule|calendar)\b",
+    re.I,
+)
+
+# Signature of an actual hours block: a "hours" header or a weekday next to
+# a clock time ("MONDAY – THURSDAY 11:30 – 8:30"). Incidental times on
+# unrelated pages don't produce this pattern.
+_HOURS_TABLE = re.compile(
+    r"\bhours?\b[^\n]{0,40}\b\d{1,2}(:\d{2})?\s*(am|pm)\b"
+    r"|\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b[^\n]{0,40}\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
+    re.I,
+)
+HOURS_BLOCK_BOOST = 0.14
 
 
 _STOPWORDS = frozenset(
@@ -664,8 +692,19 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
         idf = {w: math.log(1 + n / (df[w] or 1)) for w in q_terms}
         idf_total = sum(idf.values()) or 1
         intents = [(hint, b) for qr, hint, b in _INTENTS if qr.search(q)]
+        eventy_q = bool(_EVENTY_Q.search(q))
+        hours_q = bool(_HOURS_Q.search(q))
         core_hit = [
             bool(intents) and bool(_CORE_PATH.search(urlparse(c["source"]).path or ""))
+            for c in chunks
+        ]
+        series_hit = [
+            bool(intents) and not eventy_q
+            and bool(_SERIES_PATH.search(urlparse(c["source"]).path or ""))
+            for c in chunks
+        ]
+        hours_block = [
+            hours_q and bool(_HOURS_TABLE.search(c["text"]))
             for c in chunks
         ]
 
@@ -676,7 +715,9 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     "score": 0.55 * _cos(qv, qn, e, norms[i])
                     + 0.3 * sum(idf[w] for w in q_terms & c_terms[i]) / idf_total
                     + sum(b for hint, b in intents if hint.search(c["text"]))
-                    + (CORE_BOOST if core_hit[i] else 0.0),
+                    + (CORE_BOOST if core_hit[i] else 0.0)
+                    - (SERIES_PENALTY if series_hit[i] else 0.0)
+                    + (HOURS_BLOCK_BOOST if hours_block[i] else 0.0),
                     "text": c["text"],
                     "source": c["source"],
                 }
