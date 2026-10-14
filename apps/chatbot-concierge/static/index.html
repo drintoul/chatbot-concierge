@@ -64,6 +64,26 @@
     background: var(--panel); color: var(--txt); font: inherit; font-size: 16px;
   }
   input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(52,211,153,.16); }
+  .tzpick { position: relative; }
+  .tzbtn {
+    width: 100%; padding: 16px 18px; border-radius: 14px; border: 2px solid var(--line);
+    background: var(--panel); color: var(--txt); font: inherit; font-size: 16px;
+    text-align: left; cursor: pointer; white-space: normal; line-height: 1.4;
+  }
+  .tzbtn::after { content: "▾"; float: right; color: var(--dim); }
+  .tzlist {
+    position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
+    max-height: 320px; overflow-y: auto; background: var(--panel);
+    border: 2px solid var(--line); border-radius: 14px;
+    box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  }
+  .tzlist .tzo {
+    padding: 10px 14px; font-size: 14px; line-height: 1.35; white-space: normal;
+    cursor: pointer; border-bottom: 1px solid var(--line); color: var(--txt);
+  }
+  .tzlist .tzo:last-child { border-bottom: 0; }
+  .tzlist .tzo:hover { background: rgba(52,211,153,.10); }
+  .tzlist .tzo.sel { color: var(--accent); font-weight: 700; }
   button.cta {
     padding: 15px 28px; border: 0; border-radius: 14px; font: inherit;
     font-size: 16px; font-weight: 800; letter-spacing: .01em;
@@ -184,7 +204,11 @@
       </div>
       <div>
         <label for="i-tz">Business timezone <span style="text-transform:none">(for "what time do you close tonight"-class questions)</span></label>
-        <select id="i-tz"></select>
+        <div class="tzpick">
+          <button type="button" class="tzbtn" id="i-tz-btn">…</button>
+          <div class="tzlist" id="i-tz-list" hidden></div>
+          <input type="hidden" id="i-tz">
+        </div>
       </div>
       <button class="cta" type="submit">Index site</button>
       <div class="hint">One-time per site: crawl → chunk → embed → store. Re-run anytime to refresh.</div>
@@ -483,13 +507,32 @@ async function loadSites() {
 loadSites();
 
 // Timezone dropdown — canonical US/CA zones from the backend's tzdata.
+// Custom listbox so the long labels (capitals + offsets) can word-wrap.
 (async () => {
+  const btn = $("i-tz-btn"), list = $("i-tz-list"), hid = $("i-tz");
+  const close = () => { list.hidden = true; };
+  btn.onclick = () => { list.hidden = !list.hidden; };
+  document.addEventListener("click", e => {
+    if (!e.target.closest(".tzpick")) close();
+  });
   try {
-    const r = await fetch("/timezones");
-    const d = await r.json();
-    $("i-tz").innerHTML = d.timezones
-      .map(t => `<option value="${t.zone}"${t.zone === d.default ? " selected" : ""}>${t.label}</option>`).join("");
-  } catch { $("i-tz").innerHTML = `<option value="">(service default)</option>`; }
+    const d = await (await fetch("/timezones")).json();
+    list.innerHTML = d.timezones
+      .map(t => `<div class="tzo" data-z="${t.zone}">${t.label}</div>`).join("");
+    const pick = z => {
+      hid.value = z;
+      const t = d.timezones.find(t => t.zone === z);
+      btn.textContent = t ? t.short : z;
+      list.querySelectorAll(".tzo").forEach(o =>
+        o.classList.toggle("sel", o.dataset.z === z));
+      close();
+    };
+    list.onclick = e => {
+      const o = e.target.closest(".tzo");
+      if (o) pick(o.dataset.z);
+    };
+    pick(d.default);
+  } catch { btn.textContent = "(service default)"; }
 })();
 
 // ---------- workflow 1: index ----------

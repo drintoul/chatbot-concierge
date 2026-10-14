@@ -54,16 +54,13 @@ TZ_NAME = os.environ.get("TZ", "UTC")
 
 # Countries whose zones the index form offers: US + Canada proper, plus US
 # territories (PR/VI/GU/AS/MP) which are "timezones in the United States".
-_TZ_COUNTRIES = frozenset({"US", "CA", "PR", "VI", "GU", "AS", "MP"})
+_TZ_COUNTRIES = frozenset({"US", "CA", "PR", "VI"})
 
 
-# Well-known Canadian zones that exist as link aliases (not zone.tab rows) —
-# they fold into their behavior group but get a mention in its label.
-_EXTRA_ZONES = {
-    "America/Pangnirtung": -65.71, "America/Montreal": -73.57,
-    "America/Nipigon": -88.27, "America/Thunder_Bay": -89.25,
-    "America/Rainy_River": -94.57,
-}
+# Link aliases for major cities missing from zone.tab — folded into their
+# behavior group but shown in its label. Montreal is the only one big
+# enough to be worth surfacing.
+_EXTRA_ZONES = {"America/Montreal": -73.57}
 
 # Colloquial zone names — tzdata only ships identifiers, not these.
 _TZ_FRIENDLY = {
@@ -79,6 +76,41 @@ _TZ_FRIENDLY = {
     "America/Anchorage": "Alaska Time", "America/Adak": "Hawaii-Aleutian Time",
     "Pacific/Honolulu": "Hawaii-Aleutian Time", "Pacific/Pago_Pago": "Samoa Time",
     "Pacific/Guam": "Chamorro Time",
+}
+
+# Provincial/state capitals that fall inside each representative zone.
+# A capital inherits the timezone of the zone row it appears on — e.g.
+# Pierre is Central (SD straddles the line, but the capital sits west
+# of the Missouri River boundary's Central side).
+_TZ_CAPITALS = {
+    "America/St_Johns": ["St. John's"],
+    "America/Halifax": ["Halifax", "Fredericton", "Charlottetown"],
+    "America/Toronto": ["Toronto", "Quebec City", "Iqaluit"],
+    "America/Winnipeg": ["Winnipeg"],
+    "America/Regina": ["Regina"],
+    "America/Edmonton": ["Edmonton", "Yellowknife"],
+    "America/Vancouver": ["Victoria"],
+    "America/Whitehorse": ["Whitehorse"],
+    "America/Puerto_Rico": ["San Juan", "Charlotte Amalie"],
+    "America/New_York": [
+        "Albany", "Annapolis", "Atlanta", "Augusta", "Boston", "Charleston",
+        "Columbia", "Columbus", "Concord", "Dover", "Frankfort", "Harrisburg",
+        "Hartford", "Indianapolis", "Lansing", "Montpelier", "Providence",
+        "Raleigh", "Richmond", "Tallahassee", "Trenton", "Washington, D.C.",
+    ],
+    "America/Chicago": [
+        "Austin", "Baton Rouge", "Bismarck", "Des Moines", "Jackson",
+        "Jefferson City", "Lincoln", "Little Rock", "Madison", "Montgomery",
+        "Nashville", "Oklahoma City", "Pierre", "Springfield", "St. Paul",
+        "Topeka",
+    ],
+    "America/Denver": [
+        "Boise", "Cheyenne", "Denver", "Helena", "Salt Lake City", "Santa Fe",
+    ],
+    "America/Phoenix": ["Phoenix"],
+    "America/Los_Angeles": ["Carson City", "Olympia", "Sacramento", "Salem"],
+    "America/Anchorage": ["Juneau"],
+    "Pacific/Honolulu": ["Honolulu"],
 }
 
 # When several zones behave identically, keep the recognizable one.
@@ -183,8 +215,14 @@ def _selectable_timezones() -> list[dict[str, Any]]:
             display = f"{friendly} — {display}"
         off = _fmt_off(winter) if winter == summer \
             else f"{_fmt_off(winter)} winter · {_fmt_off(summer)} summer"
-        out.append({"zone": zone, "label": f"{display} ({off})",
-                    "is_ca": is_ca, "lon": lon})
+        caps = _TZ_CAPITALS.get(zone)
+        out.append({
+            "zone": zone,
+            "label": f"{display} — {', '.join(caps)} ({off})" if caps
+                     else f"{display} ({off})",
+            "short": f"{display} ({off})",
+            "is_ca": is_ca, "lon": lon,
+        })
     out.sort(key=lambda r: (not r["is_ca"], -r["lon"], r["zone"]))
     return out
 TOP_K = 6
