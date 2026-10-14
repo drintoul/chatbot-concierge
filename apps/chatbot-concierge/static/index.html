@@ -207,6 +207,25 @@
       <div class="hint" style="margin-top:10px">Preview of the embeddable widget — the bubble floats bottom-right over the host page. Click it to chat.</div>
     </div>
 
+    <div class="card" style="margin:0 0 12px;max-width:640px;white-space:normal">
+      <label>Customize</label>
+      <div style="display:flex;gap:16px;align-items:end;flex-wrap:wrap">
+        <div>
+          <div class="hint" style="margin-bottom:6px">Accent color</div>
+          <input type="color" id="cc-color" value="#34d399" style="width:64px;height:40px;padding:4px;cursor:pointer">
+        </div>
+        <div class="grow">
+          <div class="hint" style="margin-bottom:6px">Name (title bar)</div>
+          <input id="cc-name" placeholder="concierge" autocomplete="off">
+        </div>
+        <div class="grow">
+          <div class="hint" style="margin-bottom:6px">Opening question</div>
+          <input id="cc-greeting" placeholder="Hi! How can we help?" autocomplete="off">
+        </div>
+      </div>
+      <div class="hint" style="margin-top:10px">Updates the preview live and the embed snippet below.</div>
+    </div>
+
     <div class="card" style="margin:0;max-width:640px;white-space:normal">
       <label>Embed this widget</label>
       <pre id="embed-code"></pre>
@@ -490,8 +509,14 @@ function chatBg() {
 
 function syncSnippet() {
   const u = $("c-site").value;
+  const name = $("cc-name").value.trim(), greet = $("cc-greeting").value.trim(),
+    color = $("cc-color").value;
+  const attrs = [`data-url="${u}"`];
+  if (name) attrs.push(`data-name="${name.replace(/"/g, "&quot;")}"`);
+  if (greet) attrs.push(`data-greeting="${greet.replace(/"/g, "&quot;")}"`);
+  if (color && color !== "#34d399") attrs.push(`data-color="${color}"`);
   const snippet = u
-    ? `<script src="${location.origin}/static/widget.js" data-url="${u}" async><\/script>`
+    ? `<script src="${location.origin}/static/widget.js" ${attrs.join(" ")} async><\/script>`
     : "";
   $("embed-code").textContent = snippet;
   const demo = $("embed-demo");
@@ -505,6 +530,16 @@ function syncSnippet() {
     s.className = cls; s.textContent = t;
     demo.appendChild(s);
   }
+}
+for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
+  $(id).addEventListener("input", () => {
+    window.ConciergeWidget?.setTheme({
+      name: $("cc-name").value.trim(),
+      greeting: $("cc-greeting").value.trim(),
+      color: $("cc-color").value,
+    });
+    syncSnippet();
+  });
 }
 $("e-copy").onclick = async () => {
   await navigator.clipboard.writeText($("embed-code").textContent);
