@@ -219,8 +219,8 @@
       <label>Customize</label>
       <div style="display:flex;gap:16px;align-items:end">
         <div style="flex-shrink:0">
-          <div class="hint" style="margin-bottom:6px">Accent color</div>
-          <input type="color" id="cc-color" value="#34d399" style="width:64px;height:40px;padding:4px;cursor:pointer">
+          <div class="hint" style="margin-bottom:6px">Accent colour</div>
+          <input type="color" id="cc-colour" value="#34d399" style="width:64px;height:40px;padding:4px;cursor:pointer">
         </div>
         <div style="flex:1;min-width:0">
           <div class="hint" style="margin-bottom:6px">Name (title bar)</div>
@@ -231,7 +231,10 @@
           <input id="cc-greeting" placeholder="Hi! How can we help?" autocomplete="off" style="min-width:0">
         </div>
       </div>
-      <div class="hint" style="margin-top:10px">Updates the preview live and the embed snippet below.</div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+        <div class="hint" style="flex:1">Updates the preview live and the embed snippet below.</div>
+        <button class="cta" id="cc-save">Save</button><span class="hint" id="cc-saved"></span>
+      </div>
     </div>
 
     <div class="card" style="margin:0;max-width:640px;white-space:normal">
@@ -510,14 +513,24 @@ function bootWidget() {
   const tk = tokenFor($("c-site").value);
   s.src = "/static/widget.js" + (tk ? "?token=" + encodeURIComponent(tk) : "");
   s.dataset.url = $("c-site").value;
+  s.onload = applyCfg;
   document.body.appendChild(s);
   widgetBooted = true;
+}
+// Load the site's saved widget config into the Customize inputs.
+function applyCfg() {
+  const w = (siteList.find(s => s.url === $("c-site").value) || {}).widget || {};
+  $("cc-name").value = w.name || "";
+  $("cc-greeting").value = w.greeting || "";
+  $("cc-colour").value = w.colour || "#34d399";
+  syncTheme();
+  syncSnippet();
 }
 $("c-site").onchange = () => {
   window.ConciergeWidget?.setUrl($("c-site").value);
   window.ConciergeWidget?.setToken(tokenFor($("c-site").value));
   chatBg();
-  syncSnippet();
+  applyCfg();
 };
 
 function chatBg() {
@@ -530,11 +543,11 @@ let snippetText = "";
 function syncSnippet() {
   const u = $("c-site").value;
   const name = $("cc-name").value.trim(), greet = $("cc-greeting").value.trim(),
-    color = $("cc-color").value;
+    colour = $("cc-colour").value;
   const attrs = [`data-url="${u}"`];
   if (name) attrs.push(`data-name="${name.replace(/"/g, "&quot;")}"`);
   if (greet) attrs.push(`data-greeting="${greet.replace(/"/g, "&quot;")}"`);
-  if (color && color !== "#34d399") attrs.push(`data-color="${color}"`);
+  if (colour && colour !== "#34d399") attrs.push(`data-colour="${colour}"`);
   const tk = tokenFor(u);
   snippetText = u
     ? `<script src="${location.origin}/static/widget.js${tk ? "?token=" + tk : ""}" ${attrs.join(" ")} async><\/script>`
@@ -551,20 +564,32 @@ function syncSnippet() {
     demo.appendChild(s);
   }
 }
-for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
-  $(id).addEventListener("input", () => {
-    const c = parseInt($("cc-color").value.slice(1), 16);
-    const lum = 0.299 * (c >> 16 & 255) + 0.587 * (c >> 8 & 255) + 0.114 * (c & 255);
-    document.documentElement.style.setProperty("--wcc", $("cc-color").value);
-    document.documentElement.style.setProperty("--wcc-fg", lum > 150 ? "#06281e" : "#ffffff");
-    window.ConciergeWidget?.setTheme({
-      name: $("cc-name").value.trim(),
-      greeting: $("cc-greeting").value.trim(),
-      color: $("cc-color").value,
-    });
-    syncSnippet();
+function syncTheme() {
+  const c = parseInt($("cc-colour").value.slice(1), 16);
+  const lum = 0.299 * (c >> 16 & 255) + 0.587 * (c >> 8 & 255) + 0.114 * (c & 255);
+  document.documentElement.style.setProperty("--wcc", $("cc-colour").value);
+  document.documentElement.style.setProperty("--wcc-fg", lum > 150 ? "#06281e" : "#ffffff");
+  window.ConciergeWidget?.setTheme({
+    name: $("cc-name").value.trim(),
+    greeting: $("cc-greeting").value.trim(),
+    colour: $("cc-colour").value,
   });
 }
+for (const id of ["cc-colour", "cc-name", "cc-greeting"]) {
+  $(id).addEventListener("input", () => { syncTheme(); syncSnippet(); });
+}
+$("cc-save").onclick = async () => {
+  const u = $("c-site").value;
+  if (!u) return;
+  const cfg = { url: u, name: $("cc-name").value.trim(),
+    greeting: $("cc-greeting").value.trim(), colour: $("cc-colour").value };
+  await fetch("/widget-config", { method: "POST",
+    headers: { "content-type": "application/json" }, body: JSON.stringify(cfg) });
+  const s = siteList.find(x => x.url === u);
+  if (s) s.widget = { name: cfg.name, greeting: cfg.greeting, colour: cfg.colour };
+  $("cc-saved").textContent = "saved";
+  setTimeout(() => ($("cc-saved").textContent = ""), 2000);
+};
 $("e-copy").onclick = async () => {
   const text =
 `Add the concierge chatbot to your website:

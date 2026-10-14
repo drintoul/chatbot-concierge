@@ -911,7 +911,7 @@ async def lifespan(app: FastAPI):
         """CREATE TABLE IF NOT EXISTS corpora(
              url TEXT PRIMARY KEY, title TEXT, pages TEXT,
              chunks TEXT, embeddings TEXT, phone TEXT, email TEXT,
-             token TEXT, indexed_at REAL)"""
+             token TEXT, widget TEXT, indexed_at REAL)"""
     )
     await _db.execute(
         """CREATE TABLE IF NOT EXISTS events(
@@ -924,7 +924,7 @@ async def lifespan(app: FastAPI):
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
     for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB",
-                     "token": "TEXT"}.items():
+                     "token": "TEXT", "widget": "TEXT"}.items():
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
@@ -1060,14 +1060,41 @@ async def start_query(req: QueryRequest) -> dict[str, str]:
     return {"run_id": run_id, "status": "running"}
 
 
+class WidgetConfig(BaseModel):
+    url: HttpUrl
+    name: str | None = None
+    greeting: str | None = None
+    colour: str | None = None
+
+
+@app.post("/widget-config")
+async def save_widget_config(req: WidgetConfig) -> dict[str, bool]:
+    """Persist per-site widget theming so the Chatbot tab and generated
+    snippet reload it instead of being re-entered each visit."""
+    url = _canon(str(req.url))
+    cfg = {
+        k: v.strip()
+        for k, v in {"name": req.name, "greeting": req.greeting,
+                     "colour": req.colour}.items()
+        if v and v.strip()
+    }
+    cur = await _db.execute(
+        "UPDATE corpora SET widget=? WHERE url=?", (json.dumps(cfg), url)
+    )
+    await _db.commit()
+    if not cur.rowcount:
+        raise HTTPException(404, "site not indexed")
+    return {"ok": True}
+
+
 @app.get("/sites")
 async def list_sites() -> dict[str, Any]:
     out = []
     async with _db.execute(
         "SELECT url, title, pages, json_array_length(chunks), phone, email, token,"
-        " indexed_at FROM corpora ORDER BY indexed_at DESC"
+        " widget, indexed_at FROM corpora ORDER BY indexed_at DESC"
     ) as cur:
-        async for url, title, pages, chunk_count, phone, email, token, indexed_at in cur:
+        async for url, title, pages, chunk_count, phone, email, token, widget, indexed_at in cur:
             out.append({
                 "url": url, "title": title,
                 "pages": json.loads(pages),
@@ -1075,6 +1102,7 @@ async def list_sites() -> dict[str, Any]:
                 "phone": phone,
                 "email": email,
                 "token": token,
+                "widget": json.loads(widget) if widget else {},
                 "indexed_at": indexed_at,
             })
     return {"sites": out}

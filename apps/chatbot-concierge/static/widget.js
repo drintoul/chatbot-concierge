@@ -8,7 +8,8 @@
  * data-api      concierge base URL (default: origin this script was loaded from)
  * data-name     title-bar label (default "concierge")
  * data-greeting opening bot message (default "Hi! How can we help?")
- * data-color    accent color, hex e.g. "#e11d48" (default "#34d399")
+ * data-colour   accent colour, hex e.g. "#e11d48" (default "#34d399";
+ *               legacy "data-color" still honoured)
  *
  * Everything lives in a shadow root so host-page CSS can't bleed in.
  */
@@ -22,12 +23,13 @@
     url: script.getAttribute("data-url") || "",
     name: script.getAttribute("data-name") || "concierge",
     greeting: script.getAttribute("data-greeting") || "Hi! How can we help?",
-    color: /^#[0-9a-fA-F]{6}$/.test(script.getAttribute("data-color") || "")
-      ? script.getAttribute("data-color")
+    colour: /^#[0-9a-fA-F]{6}$/.test(
+        script.getAttribute("data-colour") || script.getAttribute("data-color") || "")
+      ? script.getAttribute("data-colour") || script.getAttribute("data-color")
       : "#34d399",
   };
 
-  // Foreground color readable on top of the accent.
+  // Foreground colour readable on top of the accent.
   function fgFor(hex) {
     var c = parseInt(hex.slice(1), 16);
     var l = 0.299 * (c >> 16 & 255) + 0.587 * (c >> 8 & 255) + 0.114 * (c & 255);
@@ -102,8 +104,8 @@
     text = root.getElementById("text");
 
   function applyTheme() {
-    host.style.setProperty("--cc", opts.color);
-    host.style.setProperty("--cc-fg", fgFor(opts.color));
+    host.style.setProperty("--cc", opts.colour);
+    host.style.setProperty("--cc-fg", fgFor(opts.colour));
     root.querySelector(".name").textContent = opts.name;
     // Re-seed the greeting only while it is still the sole message.
     var g = chat.querySelector(".greet");
@@ -182,7 +184,8 @@
     setTheme: function (o) {
       if (o.name != null) opts.name = o.name || "concierge";
       if (o.greeting != null) opts.greeting = o.greeting || "Hi! How can we help?";
-      if (o.color != null && /^#[0-9a-fA-F]{6}$/.test(o.color)) opts.color = o.color;
+      var c = o.colour != null ? o.colour : o.color;
+      if (c != null && /^#[0-9a-fA-F]{6}$/.test(c)) opts.colour = c;
       applyTheme();
     },
   };
