@@ -1,6 +1,6 @@
 /* chatbot-concierge embeddable widget.
  *
- *   <script src="https://HOST/static/widget.js?token=HARVEST" async></script>
+ *   <script src="https://HOST/static/widget.js?token=WHISTLER" async></script>
  *
  * ?token=       per-site key (required — /query rejects without it). The
  *               token resolves the site's URL and saved name / greeting /
