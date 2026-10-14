@@ -35,6 +35,7 @@
     color: var(--dim); font: inherit; font-size: 16px; font-weight: 700;
     cursor: pointer; border-radius: 14px; transition: border-color .15s, color .15s;
   }
+  .tab .tnum { font-size: 24px; margin-right: 2px; }
   .tab.active {
     color: var(--txt); border-color: var(--accent);
     background: var(--panel2);
@@ -152,11 +153,11 @@
   </div>
 
   <div class="tabs">
-    <button class="tab active" data-t="index">① Index site</button>
-    <button class="tab" data-t="query">② Query</button>
-    <button class="tab tab-chat" data-t="chat">③ Chatbot</button>
-    <button class="tab" data-t="audit">④ Audit</button>
-    <button class="tab" data-t="sites">⑤ Sites</button>
+    <button class="tab active" data-t="index"><span class="tnum">1</span> Index site</button>
+    <button class="tab" data-t="query"><span class="tnum">2</span> Query</button>
+    <button class="tab tab-chat" data-t="chat"><span class="tnum">3</span> Chatbot</button>
+    <button class="tab" data-t="audit"><span class="tnum">4</span> Audit</button>
+    <button class="tab" data-t="sites"><span class="tnum">5</span> Sites</button>
   </div>
 
   <!-- ================= INDEX ================= -->
