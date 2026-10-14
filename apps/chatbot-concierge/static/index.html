@@ -400,6 +400,8 @@ function treeBox(pages, host) {
 // ---------- sites ----------
 async function loadSites() {
   const { sites } = await (await fetch("/sites")).json();
+  sites.sort((a, b) => b.indexed_at - a.indexed_at);        // list: newest first
+  const alpha = [...sites].sort((a, b) => a.url.localeCompare(b.url)); // dropdowns: A-Z
   const list = $("sites");
   list.innerHTML = "";
   if (!sites.length) list.innerHTML = `<div class="hint">Nothing indexed yet.</div>`;
@@ -442,7 +444,7 @@ async function loadSites() {
   }
   for (const sel of ["q-site", "c-site"]) {
     const el = $(sel), prev = el.value;
-    el.innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
+    el.innerHTML = alpha.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
     if (sites.some(s => s.url === prev)) el.value = prev;
   }
   window.ConciergeWidget?.setUrl($("c-site").value);
@@ -450,7 +452,7 @@ async function loadSites() {
   syncSnippet();
   const aSel = $("a-site"), aPrev = aSel.value;
   aSel.innerHTML = `<option value="">All sites</option>` +
-    sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
+    alpha.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
   if (aPrev === "" || sites.some(s => s.url === aPrev)) aSel.value = aPrev;
 }
 loadSites();
