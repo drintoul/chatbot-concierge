@@ -428,7 +428,9 @@ async function loadSites() {
       reBtn.disabled = true;
       try {
         const body = { url: s.url, keep_contacts: true };
-        if (s.pages?.length) body.limit = s.pages.length;
+        // Stored count keeps a big corpus big — but floor it at the default
+        // so a pathologically small index can't trap itself at limit=1.
+        if (s.pages?.length) body.limit = Math.max(50, s.pages.length);
         const st = await postAndPoll("/index", body, r =>
           reBtn.textContent = r.progress ? `${r.progress.node} ${r.progress.done}/${r.progress.total}` : "…");
         reBtn.textContent = st.status === "done" ? "done" : "failed";
