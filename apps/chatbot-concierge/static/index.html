@@ -40,8 +40,13 @@
     background: var(--panel2);
   }
   .tab:hover:not(.active) { color: var(--txt); border-color: var(--dim); }
-  .tab-chat { border-color: var(--wcc, var(--accent)); }
-  .tab-chat:not(.active) { color: var(--wcc, var(--accent)); }
+  .tab-chat {
+    border-color: var(--wcc, var(--accent));
+    background: var(--wcc, var(--accent));
+    color: var(--wcc-fg, #06281e);
+  }
+  .tab-chat.active { background: var(--wcc, var(--accent)); color: var(--wcc-fg, #06281e); }
+  .tab-chat:hover:not(.active) { color: var(--wcc-fg, #06281e); border-color: var(--wcc, var(--accent)); }
   .pane { display: none; }
   .pane.active { display: block; animation: in .2s ease; }
   #chat-bg {
@@ -534,7 +539,10 @@ function syncSnippet() {
 }
 for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
   $(id).addEventListener("input", () => {
+    const c = parseInt($("cc-color").value.slice(1), 16);
+    const lum = 0.299 * (c >> 16 & 255) + 0.587 * (c >> 8 & 255) + 0.114 * (c & 255);
     document.documentElement.style.setProperty("--wcc", $("cc-color").value);
+    document.documentElement.style.setProperty("--wcc-fg", lum > 150 ? "#06281e" : "#ffffff");
     window.ConciergeWidget?.setTheme({
       name: $("cc-name").value.trim(),
       greeting: $("cc-greeting").value.trim(),
