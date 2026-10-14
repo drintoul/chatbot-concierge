@@ -112,54 +112,12 @@
   .tree-box { margin-top: 16px; padding: 16px 20px; background: var(--panel2); border: 2px solid var(--line); border-radius: 16px; overflow-x: auto; }
   .tree-box h2 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 800; margin: 0 0 10px; }
 
-  /* chatbot — embedded-widget preview */
-  #w-launch {
-    position: fixed; right: 26px; bottom: 26px; width: 62px; height: 62px;
-    border: 0; border-radius: 50%; cursor: pointer; z-index: 50;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    box-shadow: 0 8px 30px rgba(0,0,0,.5);
-    display: flex; align-items: center; justify-content: center;
-    transition: transform .15s;
+  /* chatbot — embedded-widget preview (widget DOM/styles live in /static/widget.js) */
+  #embed-code {
+    font-family: ui-monospace, monospace; font-size: 13px; color: var(--txt);
+    background: var(--bg); border: 2px solid var(--line); border-radius: 10px;
+    padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; word-break: break-all;
   }
-  #w-launch:hover { transform: scale(1.08); }
-  #w-pop {
-    position: fixed; right: 26px; bottom: 100px; z-index: 50;
-    width: 390px; max-width: calc(100vw - 40px); height: 540px; max-height: 72vh;
-    display: none; flex-direction: column; overflow: hidden;
-    background: var(--bg); border: 2px solid var(--line); border-radius: 20px;
-    box-shadow: 0 18px 60px rgba(0,0,0,.6);
-  }
-  #w-pop.open { display: flex; animation: in .2s ease; }
-  #w-head {
-    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
-    background: var(--panel2); border-bottom: 2px solid var(--line);
-    font-weight: 800; font-size: 15px;
-  }
-  #w-host { color: var(--dim); font-weight: 600; font-size: 13px; }
-  #w-head button {
-    background: none; border: 0; color: var(--dim);
-    font-size: 24px; line-height: 1; cursor: pointer; padding: 0 2px;
-  }
-  #w-head button:hover { color: var(--txt); }
-  #w-head button:first-of-type { margin-left: auto; }
-  #w-clear { font-size: 19px !important; }
-  .chat {
-    display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0;
-    overflow-y: auto; padding: 16px;
-  }
-  .chatbar { display: flex; gap: 10px; padding: 12px; background: var(--panel); border-top: 2px solid var(--line); }
-  .chatbar input { flex: 1; }
-  .chatbar button { padding: 14px 22px; }
-  .msg { max-width: 82%; padding: 14px 20px; border-radius: 20px; white-space: pre-wrap; font-size: 15px; }
-  .msg.user { align-self: flex-end; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #06281e; font-weight: 600; border-bottom-right-radius: 6px; }
-  .msg.bot { align-self: flex-start; background: var(--panel2); border: 2px solid var(--line); border-bottom-left-radius: 6px; }
-  .msg.bot .srcs { margin-top: 10px; padding-top: 10px; border-top: 2px solid var(--line); font-size: 13px; }
-  .msg.bot .srcs a { color: var(--accent); word-break: break-all; }
-  .typing { display: inline-flex; gap: 6px; padding: 6px 2px; }
-  .typing i { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); animation: blink 1.2s infinite; }
-  .typing i:nth-child(2) { animation-delay: .2s; }
-  .typing i:nth-child(3) { animation-delay: .4s; }
-  @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
 
 
   /* audit */
@@ -246,24 +204,11 @@
       <div class="hint" style="margin-top:10px">Preview of the embeddable widget — the bubble floats bottom-right over the host page. Click it to chat.</div>
     </div>
 
-    <!-- widget preview: launcher + popup, fixed to the viewport corner -->
-    <button id="w-launch" title="Chat with us">
-      <svg viewBox="0 0 24 24" width="27" height="27" fill="#06281e"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-4 9H8V9h8zm-6 4v-2h8v2z"/></svg>
-    </button>
-    <div id="w-pop">
-      <div id="w-head">
-        <img src="/static/favicon.svg" width="22" height="22" alt="">
-        <span>concierge</span><span id="w-host"></span>
-        <button id="w-clear" title="New conversation">&#8635;</button>
-        <button id="w-close" title="Close">&times;</button>
-      </div>
-      <div class="chat" id="chat">
-        <div class="msg bot">Hi! How can we help?</div>
-      </div>
-      <form class="chatbar" id="f-chat">
-        <input id="c-text" placeholder="Ask about prices, pets, location…" autocomplete="off">
-        <button class="cta" type="submit">Send</button>
-      </form>
+    <div class="card" style="margin:0;max-width:640px;white-space:normal">
+      <label>Embed this widget</label>
+      <pre id="embed-code"></pre>
+      <button class="cta" id="e-copy">Copy snippet</button>
+      <span class="hint" id="e-copied" style="margin-left:12px"></span>
     </div>
   </section>
 
@@ -299,6 +244,8 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
   if (t.dataset.t === "audit") loadAudit();
   if (t.dataset.t === "sites") loadSites();
+  if (t.dataset.t === "chat") bootWidget();
+  window.ConciergeWidget?.setVisible(t.dataset.t === "chat");
 });
 
 // ---------- shared ----------
@@ -452,8 +399,9 @@ async function loadSites() {
     el.innerHTML = sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
     if (sites.some(s => s.url === prev)) el.value = prev;
   }
-  try { $("w-host").textContent = "· " + new URL($("c-site").value).hostname; } catch {}
+  window.ConciergeWidget?.setUrl($("c-site").value);
   chatBg();
+  syncSnippet();
   const aSel = $("a-site"), aPrev = aSel.value;
   aSel.innerHTML = `<option value="">All sites</option>` +
     sites.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
@@ -498,19 +446,20 @@ $("f-query").addEventListener("submit", async (e) => {
   btn.disabled = false;
 });
 
-// ---------- workflow 3: chatbot ----------
-$("w-launch").onclick = () => {
-  $("w-pop").classList.toggle("open");
-  if ($("w-pop").classList.contains("open")) $("c-text").focus();
-};
-$("w-close").onclick = () => $("w-pop").classList.remove("open");
-$("w-clear").onclick = () => {
-  chat.innerHTML = "";
-  bubble("bot", "Hi! How can we help?");
-};
+// ---------- workflow 3: chatbot — preview runs the real embed script ----------
+let widgetBooted = false;
+function bootWidget() {
+  if (widgetBooted || !$("c-site").value) return;
+  const s = document.createElement("script");
+  s.src = "/static/widget.js";
+  s.dataset.url = $("c-site").value;
+  document.body.appendChild(s);
+  widgetBooted = true;
+}
 $("c-site").onchange = () => {
-  try { $("w-host").textContent = "· " + new URL($("c-site").value).hostname; } catch {}
+  window.ConciergeWidget?.setUrl($("c-site").value);
   chatBg();
+  syncSnippet();
 };
 
 function chatBg() {
@@ -519,29 +468,17 @@ function chatBg() {
     u ? `url("/sites/screenshot?url=${encodeURIComponent(u)}")` : "none";
 }
 
-const chat = $("chat");
-function bubble(cls, html) {
-  const m = document.createElement("div");
-  m.className = "msg " + cls;
-  m.innerHTML = html;
-  chat.appendChild(m); chat.scrollTop = chat.scrollHeight;
-  return m;
+function syncSnippet() {
+  const u = $("c-site").value;
+  $("embed-code").textContent = u
+    ? `<script src="${location.origin}/static/widget.js" data-url="${u}" async><\/script>`
+    : "";
 }
-$("f-chat").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const text = $("c-text").value.trim(); if (!text) return;
-  $("c-text").value = "";
-  bubble("user", text.replace(/</g, "&lt;"));
-  const typing = bubble("bot", `<span class="typing"><i></i><i></i><i></i></span>`);
-  try {
-    const st = await postAndPoll("/query", { url: $("c-site").value, question: text });
-    typing.innerHTML = (st.answer || st.error || "…").replace(/</g, "&lt;").replace(/\n/g, "<br>") +
-      (st.sources?.length ? `<div class="srcs">source: <a href="${st.sources[0]}" target="_blank">${st.sources[0]}</a></div>` : "");
-  } catch (err) {
-    typing.textContent = "Something went wrong: " + err;
-  }
-  chat.scrollTop = chat.scrollHeight;
-});
+$("e-copy").onclick = async () => {
+  await navigator.clipboard.writeText($("embed-code").textContent);
+  $("e-copied").textContent = "copied!";
+  setTimeout(() => ($("e-copied").textContent = ""), 2000);
+};
 
 // ---------- workflow 4: audit ----------
 async function loadAudit() {

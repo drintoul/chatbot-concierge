@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 import aiosqlite
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fpdf import FPDF
 from fastapi.staticfiles import StaticFiles
@@ -682,6 +683,14 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="chatbot-concierge", lifespan=lifespan)
+# Widget embeds post cross-origin. Wide-open for local dev; tighten to
+# per-tenant origin allowlists before public deployment.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
