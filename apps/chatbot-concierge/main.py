@@ -707,15 +707,25 @@ _EVENTY_Q = re.compile(
     re.I,
 )
 
-# Signature of an actual hours block: a "hours" header or a weekday next to
-# a clock time ("MONDAY – THURSDAY 11:30 – 8:30"). Incidental times on
-# unrelated pages don't produce this pattern.
-_HOURS_TABLE = re.compile(
-    r"\bhours?\b[^\n]{0,40}\b\d{1,2}(:\d{2})?\s*(am|pm)\b"
-    r"|\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b[^\n]{0,40}\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
+# Signature of an actual hours block: repeated weekday→clock-time pairs
+# ("Saturday 10am to 1am"). A daily-specials or event chunk can contain a
+# stray day+time ("Thursday (After 5 PM)") — it takes ≥3 pairs to earn the
+# boost, which incidental matches don't produce.
+_DAY_TIME = re.compile(
+    r"\b(mon|tue|wed|thu|fri|sat|sun)[a-z]*\b[^\n]{0,15}?\b\d{1,2}(:\d{2})?\s*(am|pm)\b",
     re.I,
 )
+_HOURS_TABLE_MIN = 3
 HOURS_BLOCK_BOOST = 0.14
+
+# Price lists are the classic hours-question impostor: daily specials and
+# menus are dense with day names AND clock times AND the word "open" ("Happy
+# Hour pricing from open to close"), but a real hours table has no prices.
+# On hours questions, demote currency-dense chunks — gated by the same
+# eventy guard as SERIES_PENALTY since legit event pages carry prices too.
+_PRICE = re.compile(r"\$\s?\d|\d+\s?¢")
+_PRICE_DENSE_MIN = 3
+PRICE_LIST_PENALTY = 0.12
 
 
 _STOPWORDS = frozenset(
@@ -772,7 +782,12 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
             for c in chunks
         ]
         hours_block = [
-            hours_q and bool(_HOURS_TABLE.search(c["text"]))
+            hours_q and len(_DAY_TIME.findall(c["text"])) >= _HOURS_TABLE_MIN
+            for c in chunks
+        ]
+        price_list = [
+            hours_q and not eventy_q
+            and len(_PRICE.findall(c["text"])) >= _PRICE_DENSE_MIN
             for c in chunks
         ]
 
@@ -785,7 +800,8 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     + sum(b for hint, b in intents if hint.search(c["text"]))
                     + (CORE_BOOST if core_hit[i] else 0.0)
                     - (SERIES_PENALTY if series_hit[i] else 0.0)
-                    + (HOURS_BLOCK_BOOST if hours_block[i] else 0.0),
+                    + (HOURS_BLOCK_BOOST if hours_block[i] else 0.0)
+                    - (PRICE_LIST_PENALTY if price_list[i] else 0.0),
                     "text": c["text"],
                     "source": c["source"],
                 }
