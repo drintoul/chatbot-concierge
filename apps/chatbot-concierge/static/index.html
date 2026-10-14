@@ -595,20 +595,47 @@ $("cc-save").onclick = async () => {
   setTimeout(() => ($("cc-saved").textContent = ""), 2000);
 };
 $("e-copy").onclick = async () => {
+  const tk = tokenFor($("c-site").value);
   const text =
-`Add the concierge chatbot to your website:
+`Add the Concierge Chatbot to Your Website
+Give your website visitors an AI-powered assistant in three simple steps.
 
-1. Open your site's HTML (or your site builder's "custom HTML / embed code"
-   setting — WordPress, Squarespace, Wix and Shopify all have one).
-2. Paste this line just before the closing </body> tag:
+1. Open your website settings
+Find the option to add custom HTML or JavaScript. Most website builders,
+including WordPress, Squarespace, Wix, and Shopify, support this feature.
 
-${snippetText}
+2. Copy and paste this code
+Add the following code just before the closing </body> tag, or use your
+website builder's site-wide custom code settings.
 
-3. Save and publish. A chat bubble will appear in the bottom-right corner
-   of your site and answer visitors from your indexed content.
+<script src="${location.origin}/static/widget.js?token=${tk}" async><\/script>
 
-That's it — the token in the script URL links the widget to your site and
-picks up your saved name, greeting and accent colour automatically.`;
+3. Save and publish
+Your chatbot will appear as a chat bubble in the bottom-right corner of
+your website. Visitors can click the bubble to ask questions about your
+business using information indexed from your website.
+
+Already configured for you
+Your installation code automatically loads your saved chatbot settings:
+- Business name
+- Welcome greeting
+- Accent colour
+- Indexed website content
+You don't need to modify the code or configure anything else.
+
+One technical recommendation
+Your current implementation uses:
+widget.js?token=${tk}
+This is perfectly reasonable for identifying a chatbot configuration.
+However, consider using a generated, opaque identifier instead of a
+recognizable business name:
+widget.js?token=cb_a7f3e91d
+This avoids predictable identifiers and makes it easier to regenerate
+identifiers independently of business names.
+Important: The token is publicly visible in the page source. It must only
+identify the chatbot configuration, never grant privileged access to
+backend APIs or another tenant's content. Enforce tenant isolation
+server-side.`;
   await navigator.clipboard.writeText(text);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);
