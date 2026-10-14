@@ -70,6 +70,7 @@ class ChatbotConciergeState(TypedDict, total=False):
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
     phone: str | None                    # operator-provided contact number
     email: str | None                    # operator-provided contact email
+    keep_contacts: bool                  # store keeps existing phone/email
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
     screenshot: bytes | None             # homepage PNG captured during crawl
@@ -320,15 +321,16 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
     if bail(state):
         return {}
     url = _canon(state["url"])
+    keep = state.get("keep_contacts")
     await _db.execute(
-        """INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
+        f"""INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
                               screenshot, indexed_at)
            VALUES(?,?,?,?,?,?,?,?,?)
            ON CONFLICT(url) DO UPDATE SET
              title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
              embeddings=excluded.embeddings,
-             phone=excluded.phone,
-             email=excluded.email,
+             phone={"phone" if keep else "excluded.phone"},
+             email={"email" if keep else "excluded.email"},
              screenshot=excluded.screenshot,
              indexed_at=excluded.indexed_at""",
         (
@@ -733,6 +735,7 @@ class IndexRequest(BaseModel):
     depth: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_DEPTH when set
     phone: str | None = None  # contact number for handoff answers
     email: str | None = None  # contact email for handoff answers
+    keep_contacts: bool = False  # preserve existing phone/email on reindex
 
 
 class QueryRequest(BaseModel):
@@ -807,6 +810,7 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
         initial["phone"] = req.phone.strip() or None
     if req.email:
         initial["email"] = req.email.strip() or None
+    initial["keep_contacts"] = req.keep_contacts
     asyncio.create_task(_run(_index_graph, run_id, initial))
     return {"run_id": run_id, "status": "running"}
 
