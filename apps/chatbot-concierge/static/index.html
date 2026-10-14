@@ -116,7 +116,7 @@
   .tree-box h2 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 800; margin: 0 0 10px; }
 
   /* chatbot — embedded-widget preview (widget DOM/styles live in /static/widget.js) */
-  #embed-code, #embed-demo {
+  #embed-demo {
     font-family: ui-monospace, monospace; font-size: 13px; color: var(--txt);
     background: var(--bg); border: 2px solid var(--line); border-radius: 10px;
     padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; word-break: break-all;
@@ -230,7 +230,6 @@
 
     <div class="card" style="margin:0;max-width:640px;white-space:normal">
       <label>Embed this widget</label>
-      <pre id="embed-code"></pre>
       <div class="hint" style="margin-bottom:12px">Paste it just before the closing <code>&lt;/body&gt;</code> tag of your site — the launcher bubble floats bottom-right over your page:</div>
       <pre id="embed-demo"></pre>
       <button class="cta" id="e-copy">Copy snippet</button>
@@ -509,6 +508,7 @@ function chatBg() {
     u ? `url("/sites/screenshot?url=${encodeURIComponent(u)}")` : "none";
 }
 
+let snippetText = "";
 function syncSnippet() {
   const u = $("c-site").value;
   const name = $("cc-name").value.trim(), greet = $("cc-greeting").value.trim(),
@@ -517,15 +517,14 @@ function syncSnippet() {
   if (name) attrs.push(`data-name="${name.replace(/"/g, "&quot;")}"`);
   if (greet) attrs.push(`data-greeting="${greet.replace(/"/g, "&quot;")}"`);
   if (color && color !== "#34d399") attrs.push(`data-color="${color}"`);
-  const snippet = u
+  snippetText = u
     ? `<script src="${location.origin}/static/widget.js" ${attrs.join(" ")} async><\/script>`
     : "";
-  $("embed-code").textContent = snippet;
   const demo = $("embed-demo");
   demo.innerHTML = "";
   for (const [cls, t] of [
     ["dim", "<body>\n  …\n  <header>My Business</header>\n  <main>Welcome!</main>\n  <footer>© My Business</footer>\n\n"],
-    ["hl", "  " + snippet + "\n"],
+    ["hl", "  " + snippetText + "\n"],
     ["dim", "</body>\n</html>"],
   ]) {
     const s = document.createElement("span");
@@ -545,7 +544,7 @@ for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
   });
 }
 $("e-copy").onclick = async () => {
-  await navigator.clipboard.writeText($("embed-code").textContent);
+  await navigator.clipboard.writeText(snippetText);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);
 };
