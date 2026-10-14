@@ -616,8 +616,6 @@ async function loadAudit() {
 $("a-site").onchange = loadAudit;
 $("a-clear").onclick = async () => {
   const u = $("a-site").value;
-  const what = u || "ALL sites";
-  if (!confirm(`Delete all audit events for ${what}?`)) return;
   await fetch("/audit" + (u ? "?url=" + encodeURIComponent(u) : ""), { method: "DELETE" });
   loadAudit();
 };
