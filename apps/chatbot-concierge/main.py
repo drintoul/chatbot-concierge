@@ -266,21 +266,40 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             json={"url": state["url"], "limit": MAP_LIMIT},
         )
         res.raise_for_status()
-        body = res.json()
-        if not body.get("success", True):
-            raise RuntimeError(f"map failed: {str(body)[:200]}")
+        body = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
+        seed_host = urlparse(state["url"]).netloc.lower().removeprefix("www.")
         seed = state["url"].split("#")[0].rstrip("/")
         urls, seen = [], set()
-        for link in body.get("links") or []:
-            u = link.get("url") if isinstance(link, dict) else link
+
+        def add_url(u: str) -> None:
             u = (u or "").split("#")[0].rstrip("/")
-            if u and u not in seen:
+            if (u.startswith("http") and u not in seen
+                    and urlparse(u).netloc.lower().removeprefix("www.") == seed_host):
                 seen.add(u)
                 urls.append(u)
-        if seed and seed not in seen:
-            urls.insert(0, seed)
+
+        for link in body.get("links") or []:
+            add_url(link.get("url") if isinstance(link, dict) else link)
+
         if not urls:
-            raise RuntimeError("map returned no URLs")
+            # /v2/map leans on sitemap.xml — sites without one (or behind a
+            # storefront CMS like BigCommerce) need scrape-based discovery:
+            # render the seed page and take its same-site links.
+            res = await http.post(
+                f"{FIRECRAWL}/v2/scrape",
+                json={
+                    "url": state["url"],
+                    "formats": ["markdown", "links"],
+                    "onlyMainContent": False,
+                },
+            )
+            res.raise_for_status()
+            for u in (res.json().get("data") or {}).get("links") or []:
+                add_url(u)
+
+        add_url(seed)
+        if not urls:
+            raise RuntimeError("discovery returned no URLs")
 
         # 2) Curate at URL level. Obvious junk is filtered by rule; when more
         # candidates remain than the scrape budget, the LLM picks the best
