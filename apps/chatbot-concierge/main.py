@@ -298,6 +298,25 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
         for u in (res.json().get("data") or {}).get("links") or []:
             add_url(u)
 
+        # Second hop through a few core "hub" pages — utility pages like
+        # /contact-us/hours-and-holiday-closures get linked from nav
+        # dropdowns on contact/services pages, not the homepage.
+        hubs = [u for u in urls
+                if _HUB_PATH.search(urlparse(u).path or "")
+                and not _JUNK_PATH.search(urlparse(u).path or "")][:8]
+        if hubs:
+            hops = await asyncio.gather(*[
+                http.post(
+                    f"{FIRECRAWL}/v2/scrape",
+                    json={"url": u, "formats": ["links"], "onlyMainContent": False},
+                )
+                for u in hubs
+            ], return_exceptions=True)
+            for r2 in hops:
+                if isinstance(r2, httpx.Response) and r2.status_code == 200:
+                    for u in (r2.json().get("data") or {}).get("links") or []:
+                        add_url(u)
+
         add_url(seed)
         if not urls:
             raise RuntimeError("discovery returned no URLs")
@@ -655,6 +674,15 @@ _INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
 # Pages that carry canonical business facts — when an intent fires, chunks
 # from these paths outrank incidental matches on event/blog pages, which are
 # also full of times/dates/prices but answer a different question.
+# Pages whose nav/footer sections commonly hold second-level utility links
+# (hours, closures, policies, directions) that the homepage doesn't surface.
+_HUB_PATH = re.compile(
+    r"^/(contact|about|services?|info|visit|hours?|locations?|find-?us|"
+    r"help|support|faqs?|company)([/_-]|$)",
+    re.I,
+)
+
+
 _CORE_PATH = re.compile(
     r"^/(contact|about|hours?|find-?us|visit|location|directions|menu|"
     r"rates?|pric|book|reserv|stay|rooms?|accommodation|faq|info|"
