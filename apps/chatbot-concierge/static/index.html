@@ -181,6 +181,7 @@
     <button class="tab tab-chat" data-t="chat"><span class="tnum">3</span> Chatbot</button>
     <button class="tab" data-t="audit"><span class="tnum">4</span> Audit</button>
     <button class="tab" data-t="sites"><span class="tnum">5</span> Sites</button>
+    <button class="tab" data-t="extract"><span class="tnum">6</span> Extract</button>
   </div>
 
   <!-- ================= INDEX ================= -->
@@ -300,11 +301,26 @@
     </div>
     <div class="site-list" id="sites"></div>
   </section>
+
+  <!-- ================= EXTRACT ================= -->
+  <section class="pane" id="pane-extract">
+    <form id="f-extract">
+      <div>
+        <label for="x-url">Business website</label>
+        <input id="x-url" type="url" placeholder="https://theirbusiness.com/" required>
+      </div>
+      <button class="cta" type="submit">Extract facts</button>
+      <div class="hint">Scrapes the homepage plus key pages (contact, hours, menu…) and lists the facts
+        an AI concierge would glean — a pre-sales preview for the business owner.</div>
+    </form>
+    <div class="status" id="s-extract"></div>
+    <div id="out-extract" style="display:grid;gap:14px"></div>
+  </section>
 </main>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit", sites: "pane-sites" };
+const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit", sites: "pane-sites", extract: "pane-extract" };
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
   document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
   Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
@@ -725,6 +741,48 @@ $("a-pdf").onclick = () => {
   const u = $("a-site").value;
   window.location.href = "/audit/pdf" + (u ? "?url=" + encodeURIComponent(u) : "");
 };
+
+// ---------- extract (pre-sales fact sheet) ----------
+const XLBL = {
+  business_name: "Business", what_they_do: "What they do", address: "Address",
+  phone: "Phone", email: "Email", hours: "Hours", amenities: "Amenities",
+  services_or_menu: "Services / menu", prices: "Prices", policies: "Policies",
+  booking_or_ordering: "Booking & ordering", social_links: "Social links",
+  other_facts: "Other facts",
+};
+$("f-extract").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button"); btn.disabled = true;
+  const st = $("s-extract"), out = $("out-extract");
+  st.textContent = "scraping + extracting — this takes a minute…"; out.innerHTML = "";
+  try {
+    const r = await fetch("/extract", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: $("x-url").value }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.status);
+    st.textContent = "";
+    const meta = document.createElement("div");
+    meta.className = "hint";
+    meta.textContent = `${d.pages.length} page(s) read · ${(d.elapsed_ms / 1000).toFixed(1)}s — ${d.pages.join(", ")}`;
+    out.appendChild(meta);
+    for (const [key, lbl] of Object.entries(XLBL)) {
+      const v = d.facts[key];
+      if (v == null || v === "" || (Array.isArray(v) && !v.length)) continue;
+      const card = document.createElement("div");
+      card.className = "card";
+      const items = Array.isArray(v) ? v : [v];
+      card.innerHTML = `<h2>${lbl}</h2><ul style="margin:0;padding-left:18px">` +
+        items.map(i => `<li style="margin:3px 0">${i}</li>`).join("") + `</ul>`;
+      out.appendChild(card);
+    }
+    if (!out.querySelector(".card")) {
+      out.innerHTML += `<div class="card"><h2>nothing extracted</h2><p class="hint">The scrape succeeded but no recognizable facts came out of it.</p></div>`;
+    }
+  } catch (err) { st.textContent = "failed: " + err.message; }
+  btn.disabled = false;
+});
 </script>
 </body>
 </html>

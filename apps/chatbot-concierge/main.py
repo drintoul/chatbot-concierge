@@ -1303,6 +1303,107 @@ class QueryRequest(BaseModel):
     token: str | None = None  # widget key — must match the corpus's stored token
 
 
+class ExtractRequest(BaseModel):
+    url: HttpUrl
+
+
+# Pre-sales demo: scrape a site and show the owner which business facts an
+# AI concierge can pull out of it. Firecrawl gathers the pages, Ollama does
+# the structured extraction — deterministic schema, no per-field guessing.
+_EXTRACT_PROMPT = (
+    "You extract business facts from scraped website text. Reply with a "
+    "single JSON object only — no commentary, no markdown fences. Use "
+    "exactly these keys, omitting any the text doesn't cover (never "
+    "invent a value): "
+    '{"business_name": str, "what_they_do": str (one sentence), '
+    '"address": str, "phone": str, "email": str, "hours": [str], '
+    '"amenities": [str], "services_or_menu": [str], "prices": [str], '
+    '"policies": [str], "booking_or_ordering": [str], "social_links": [str], '
+    '"other_facts": [str]}. '
+    "Each list item is one fact, verbatim-short (e.g. \"Mon–Fri 9am–5pm\", "
+    "\"pet fee $75/stay\"). Hours keep their day and time qualifiers."
+)
+
+_EXTRACT_MAX_MD = 6000   # chars of markdown per page fed to the model
+_EXTRACT_MAX_PAGES = 4   # core-path pages scraped beyond the seed
+# Any path segment counts — sites nest utility pages under a location slug
+# ("/abbotsford/menu"), which an anchored core-path check would miss.
+_EXTRACT_PATH = re.compile(
+    r"/(contact|about|hours?|find-?us|visit|locations?|directions|menus?|"
+    r"rates?|pric|book|reserv|stay|rooms?|accommodation|faqs?|info|polic)",
+    re.I,
+)
+
+
+@app.post("/extract")
+async def extract(req: ExtractRequest) -> dict[str, Any]:
+    """Scrape a business site and extract its key facts — pre-sales demo."""
+    t0 = time.time()
+    url = str(req.url)
+    host = urlparse(url).netloc.lower().removeprefix("www.")
+
+    async def scrape(u: str, formats: list[str]) -> dict[str, Any]:
+        r = await http.post(
+            f"{FIRECRAWL}/v2/scrape",
+            json={"url": u, "formats": formats, "onlyMainContent": False},
+        )
+        r.raise_for_status()
+        return r.json().get("data") or {}
+
+    try:
+        seed = await scrape(url, ["markdown", "links"])
+    except Exception as e:
+        raise HTTPException(502, f"scrape failed: {e}")
+
+    # Follow a few core-path links — hours/contact/menu rarely live on the
+    # homepage. Same-host, non-junk only; this is a demo, not a crawl.
+    seen, extra = {url.rstrip("/")}, []
+    for u in seed.get("links") or []:
+        u = (u.get("url") if isinstance(u, dict) else u or "").split("#")[0].rstrip("/")
+        path = (urlparse(u).path or "/").lower()
+        if (len(extra) >= _EXTRACT_MAX_PAGES or u in seen
+                or urlparse(u).netloc.lower().removeprefix("www.") != host
+                or not _EXTRACT_PATH.search(path) or _JUNK_PATH.search(path)):
+            continue
+        seen.add(u)
+        extra.append(u)
+    pages = await asyncio.gather(
+        *[scrape(u, ["markdown"]) for u in extra], return_exceptions=True
+    )
+
+    docs = [seed["markdown"][:_EXTRACT_MAX_MD]]
+    for p in pages:
+        if isinstance(p, dict) and p.get("markdown"):
+            docs.append(p["markdown"][:_EXTRACT_MAX_MD])
+    if not seed.get("markdown"):
+        raise HTTPException(502, "scrape returned no markdown")
+
+    res = await http.post(
+        f"{OLLAMA}/v1/chat/completions",
+        json={
+            "model": CHAT_MODEL,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": _EXTRACT_PROMPT},
+                {"role": "user", "content": "\n\n---PAGE---\n\n".join(docs)},
+            ],
+        },
+    )
+    res.raise_for_status()
+    raw = res.json()["choices"][0]["message"]["content"].strip()
+    try:
+        facts = json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{.*\}", raw, re.S)
+        facts = json.loads(m.group(0)) if m else {"raw": raw}
+    return {
+        "facts": facts,
+        "pages": [url] + extra,
+        "elapsed_ms": round((time.time() - t0) * 1000),
+    }
+
+
 async def _audit(graph, run_id: str, cfg: dict[str, Any]) -> None:
     """Persist each finished query run — question, response, latency.
     Never raises: auditing must not break a run."""
