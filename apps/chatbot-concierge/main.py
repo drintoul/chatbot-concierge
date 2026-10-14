@@ -503,11 +503,15 @@ def _canon(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
+# No lookalike glyphs: drops digits 0/1/5 and letters I/L/O/S — a token
+# read off a screenshot or email can't be mis-transcribed.
+_TOKEN_ALPHABET = "".join(c for c in string.ascii_uppercase if c not in "ILOS") + "2346789"
+_TOKEN_RE = re.compile(r"[A-HJ-KM-NP-RT-Z2346789]{8}")
+
+
 def _new_token() -> str:
-    """Per-site widget key — 8 random alphanumeric chars."""
-    return "".join(
-        secrets.choice(string.ascii_lowercase + string.digits) for _ in range(8)
-    )
+    """Per-site widget key — 8 random unambiguous uppercase chars."""
+    return "".join(secrets.choice(_TOKEN_ALPHABET) for _ in range(8))
 
 
 def _site_title(state: ChatbotConciergeState) -> str | None:
@@ -969,14 +973,14 @@ async def lifespan(app: FastAPI):
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
     await _db.commit()
-    # Rows indexed before tokens existed get one now.
-    async with _db.execute("SELECT url FROM corpora WHERE token IS NULL") as cur:
-        missing = [r[0] async for r in cur]
-    for u in missing:
+    # Rows with no token (or an old lowercase charset one) get a fresh one.
+    async with _db.execute("SELECT url, token FROM corpora") as cur:
+        stale = [r[0] async for r in cur if not r[1] or not _TOKEN_RE.fullmatch(r[1])]
+    for u in stale:
         await _db.execute(
             "UPDATE corpora SET token=? WHERE url=?", (_new_token(), u)
         )
-    if missing:
+    if stale:
         await _db.commit()
 
     _index_graph = _build(
