@@ -116,9 +116,9 @@ MAX_PREFIX_PAGES = 30  # detail-series budget per first path segment
 
 
 def _pick_urls(urls: list[str], limit: int) -> tuple[list[str], int]:
-    """Choose which mapped URLs are worth scraping: drop junk paths, sort
-    shallow/core paths ahead of deep detail pages (stable — discovery order
-    survives within a depth), then cap each first-segment series."""
+    """Heuristic URL curation: drop junk paths, sort shallow/core paths ahead
+    of deep detail pages (stable — discovery order survives within a depth),
+    then cap each first-segment series."""
     def depth(u: str) -> int:
         return len([s for s in urlparse(u).path.split("/") if s])
 
@@ -135,6 +135,102 @@ def _pick_urls(urls: list[str], limit: int) -> tuple[list[str], int]:
         kept.append(u)
     picked = kept[:limit]
     return picked, len(urls) - len(picked)
+
+
+# Small models can't prune a 300-URL list — they echo it back. So the pick
+# task is shaped small: individual core/section pages by index, big repeated
+# families (/events/*) collapsed to a name + keep-count.
+_PICK_PROMPT = (
+    "You select which pages of a business website to index for a visitor "
+    "concierge chatbot. You are given a numbered list of individual page URLs "
+    "plus FAMILIES — groups of many similar pages (shown by example).\n"
+    "Rules:\n"
+    "- Include every core visitor page: homepage, about, contact, hours, "
+    "location/directions, menu/services, pricing, booking, rooms/"
+    "accommodations, FAQ.\n"
+    "- For each FAMILY choose how many pages to keep (0 to {max_keep}): a few "
+    "representative pages for families visitors ask about (events, tours, "
+    "cabins), 0 for junk, duplicates, or machine-generated series.\n"
+    "- Drop login, account, cart, confirmation, search, tag/author/archive "
+    "pages from the individual list.\n"
+    'Reply ONLY as JSON: {{"pages": [indices], "families": {{"prefix": count}}}}'
+)
+
+FAMILY_MIN = 6          # prefix groups smaller than this list individually
+FAMILY_DEFAULT = 5      # keep-count for families the model didn't mention
+
+
+async def _llm_pick(urls: list[str], limit: int) -> tuple[list[str], set[str]] | None:
+    """Ask the chat model which mapped URLs to scrape: individual pages by
+    index, big URL families by keep-count. Output is validated against the
+    mapped set. Returns (picked, big-family URLs) or None on failure → caller
+    falls back to heuristics."""
+    items, fam_map = [], {}
+    for u in urls:
+        segs = [s for s in urlparse(u).path.strip("/").split("/") if s]
+        (fam_map.setdefault(segs[0].lower(), []) if len(segs) > 1 else items).append(u)
+    fams = {p: v for p, v in fam_map.items() if len(v) >= FAMILY_MIN}
+    for p in sorted(fam_map):
+        if p not in fams:
+            items.extend(fam_map[p])
+
+    listing = "\n".join(f"{i} {u}" for i, u in enumerate(items))
+    if fams:
+        listing += "\n\nFAMILIES (pick a keep-count for each):\n" + "\n".join(
+            f"- /{p}/… — {len(v)} pages, e.g. {v[0]}"
+            + (f", {v[1]}" if len(v) > 1 else "")
+            for p, v in fams.items()
+        )
+    try:
+        res = await http.post(
+            f"{OLLAMA}/v1/chat/completions",
+            json={
+                "model": CHAT_MODEL,
+                "temperature": 0,
+                "messages": [
+                    {"role": "system", "content": _PICK_PROMPT.format(max_keep=MAX_PREFIX_PAGES)},
+                    {"role": "user", "content": listing},
+                ],
+            },
+        )
+        res.raise_for_status()
+        text = res.json()["choices"][0]["message"]["content"]
+        m = re.search(r"[\[{][\s\S]*[\]}]", text)
+        raw = m.group(0) if m else ""
+        try:
+            sel = json.loads(raw)
+        except Exception:
+            # small models sometimes emit // comments inside the JSON
+            sel = json.loads(re.sub(r"//[^\n]*", "", raw))
+        if isinstance(sel, list):
+            sel = {"pages": sel}
+        if not isinstance(sel, dict):
+            return None
+
+        picked, seen = [], set()
+        def take(u: str) -> None:
+            if u not in seen:
+                seen.add(u)
+                picked.append(u)
+
+        for i in sel.get("pages") or []:
+            if isinstance(i, int) and 0 <= i < len(items):
+                take(items[i])
+        counts = sel.get("families") or {}
+        if not isinstance(counts, dict):
+            counts = {}
+        for p, members in fams.items():
+            n = counts.get(p, FAMILY_DEFAULT)
+            if not isinstance(n, int):
+                n = FAMILY_DEFAULT
+            for u in members[: max(0, min(n, MAX_PREFIX_PAGES))]:
+                take(u)
+        if not picked:
+            return None
+        fam_urls = {u for v in fams.values() for u in v}
+        return picked[:limit], fam_urls
+    except Exception:
+        return None
 
 
 def _kept_pages(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
@@ -186,9 +282,28 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
         if not urls:
             raise RuntimeError("map returned no URLs")
 
-        # 2) Curate at URL level — core paths first, junk and excess series
-        # never consume a scrape slot.
-        picked, dropped = _pick_urls(urls, limit)
+        # 2) Curate at URL level. Obvious junk is filtered by rule; when more
+        # candidates remain than the scrape budget, the LLM picks the best
+        # (validated against the mapped set) and heuristic order tops up.
+        clean = [u for u in urls
+                 if not _JUNK_PATH.search((urlparse(u).path or "/").lower())]
+        heur, _ = _pick_urls(urls, limit)
+        via = "rules"
+        if len(clean) > limit:
+            res = await _llm_pick(clean, limit)
+            if res:
+                llm, fam_urls = res
+                via = "llm"
+                seen = set(llm)
+                # top up with heuristic picks — except big-family members the
+                # model already budgeted
+                picked = (llm + [u for u in heur
+                                 if u not in seen and u not in fam_urls])[:limit]
+            else:
+                picked = heur
+        else:
+            picked = heur
+        dropped = len(urls) - len(picked)
         if not picked:
             raise RuntimeError("map returned only junk URLs (login/archive/CMS)")
 
@@ -253,7 +368,7 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             "pages": pages,
             "screenshot": await _shot(http, state["url"]),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
-                           mapped=len(urls), pages=len(pages),
+                           mapped=len(urls), pages=len(pages), via=via,
                            dropped=dropped + dropped2, job=job_id)],
         }
     except Exception as e:

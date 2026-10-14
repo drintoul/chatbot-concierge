@@ -275,7 +275,7 @@ document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
 // ---------- shared ----------
 const fmt = (d) =>
   [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null,
-   d.mapped != null ? "mapped " + d.mapped : null,
+   d.mapped != null ? "mapped " + d.mapped : null, d.via != null ? "picked by " + d.via : null,
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
    d.dropped != null ? "dropped " + d.dropped + " junk" : null,
    d.best != null ? "best " + d.best : null, d.model || null,
