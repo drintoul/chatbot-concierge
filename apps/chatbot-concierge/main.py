@@ -301,14 +301,16 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
         if not urls:
             raise RuntimeError("discovery returned no URLs")
 
-        # 2) Curate at URL level. Obvious junk is filtered by rule; when more
-        # candidates remain than the scrape budget, the LLM picks the best
-        # (validated against the mapped set) and heuristic order tops up.
+        # 2) Curate at URL level. Obvious junk is filtered by rule; on any
+        # non-trivial site the LLM decides which families are worth keeping
+        # (and how many of each), validated against the mapped set. Its
+        # family keep-counts trim even when the total fits under the scrape
+        # limit — a map that returns everything shouldn't index everything.
         clean = [u for u in urls
                  if not _JUNK_PATH.search((urlparse(u).path or "/").lower())]
         heur, _ = _pick_urls(urls, limit)
         via = "rules"
-        if len(clean) > limit:
+        if len(clean) > 12:
             res = await _llm_pick(clean, limit)
             if res:
                 llm, fam_urls = res
