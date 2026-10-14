@@ -512,7 +512,6 @@ function bootWidget() {
   const s = document.createElement("script");
   const tk = tokenFor($("c-site").value);
   s.src = "/static/widget.js" + (tk ? "?token=" + encodeURIComponent(tk) : "");
-  s.dataset.url = $("c-site").value;
   s.onload = applyCfg;
   document.body.appendChild(s);
   widgetBooted = true;
@@ -542,15 +541,11 @@ function chatBg() {
 let snippetText = "";
 function syncSnippet() {
   const u = $("c-site").value;
-  const name = $("cc-name").value.trim(), greet = $("cc-greeting").value.trim(),
-    colour = $("cc-colour").value;
-  const attrs = [`data-url="${u}"`];
-  if (name) attrs.push(`data-name="${name.replace(/"/g, "&quot;")}"`);
-  if (greet) attrs.push(`data-greeting="${greet.replace(/"/g, "&quot;")}"`);
-  if (colour && colour !== "#34d399") attrs.push(`data-colour="${colour}"`);
   const tk = tokenFor(u);
-  snippetText = u
-    ? `<script src="${location.origin}/static/widget.js${tk ? "?token=" + tk : ""}" ${attrs.join(" ")} async><\/script>`
+  // The token resolves the site's URL and saved widget config server-side —
+  // the tag stays one attribute, and saved changes apply without re-embedding.
+  snippetText = u && tk
+    ? `<script src="${location.origin}/static/widget.js?token=${tk}" async><\/script>`
     : "";
   const demo = $("embed-demo");
   demo.innerHTML = "";
@@ -603,8 +598,8 @@ ${snippetText}
 3. Save and publish. A chat bubble will appear in the bottom-right corner
    of your site and answer visitors from your indexed content.
 
-The token in the script URL is your widget key — the concierge only answers
-for your site when that token is present.`;
+That's it — the token in the script URL links the widget to your site and
+picks up your saved name, greeting and accent colour automatically.`;
   await navigator.clipboard.writeText(text);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);

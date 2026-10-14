@@ -1128,6 +1128,21 @@ async def save_widget_config(req: WidgetConfig) -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/widget-config")
+async def widget_config(token: str) -> dict[str, Any]:
+    """The embed tag carries only ?token= — the widget calls this to resolve
+    its site URL and saved theming. Token is the lookup key, so nothing else
+    needs to be in the tag."""
+    async with _db.execute(
+        "SELECT url, widget FROM corpora WHERE token=?", (token,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "unknown token")
+    cfg = json.loads(row[1]) if row[1] else {}
+    return {"url": row[0], **cfg}
+
+
 @app.get("/sites")
 async def list_sites() -> dict[str, Any]:
     out = []

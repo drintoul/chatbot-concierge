@@ -1,15 +1,17 @@
 /* chatbot-concierge embeddable widget.
  *
- *   <script src="https://HOST/static/widget.js?token=abc12345" data-url="https://tenant-site.com/" async></script>
+ *   <script src="https://HOST/static/widget.js?token=abc12345" async></script>
  *
- * ?token=       per-site key (required — /query rejects without it); also
- *               accepted as data-token if the src URL can't carry a query
- * data-url      tenant corpus URL (required — what the concierge answers about)
+ * ?token=       per-site key (required — /query rejects without it). The
+ *               token resolves the site's URL and saved name / greeting /
+ *               accent colour, so the tag needs nothing else; also accepted
+ *               as data-token if the src URL can't carry a query.
+ * data-url      corpus URL override (rarely needed — token resolves it)
  * data-api      concierge base URL (default: origin this script was loaded from)
- * data-name     title-bar label (default "concierge")
- * data-greeting opening bot message (default "Hi! How can we help?")
- * data-colour   accent colour, hex e.g. "#e11d48" (default "#34d399";
- *               legacy "data-color" still honoured)
+ * data-name     title-bar label override
+ * data-greeting opening bot message override
+ * data-colour   accent colour override, hex e.g. "#e11d48"
+ *               (legacy "data-color" still honoured)
  *
  * Everything lives in a shadow root so host-page CSS can't bleed in.
  */
@@ -27,6 +29,14 @@
         script.getAttribute("data-colour") || script.getAttribute("data-color") || "")
       ? script.getAttribute("data-colour") || script.getAttribute("data-color")
       : "#34d399",
+  };
+  // Which opts came from explicit data-* attrs — token-resolved config
+  // fills blanks but never overrides an explicit attribute.
+  var explicit = {
+    url: !!opts.url,
+    name: script.hasAttribute("data-name"),
+    greeting: script.hasAttribute("data-greeting"),
+    colour: script.hasAttribute("data-colour") || script.hasAttribute("data-color"),
   };
 
   // Foreground colour readable on top of the accent.
@@ -118,6 +128,22 @@
   }
   applyTheme();
   hostLabel();
+
+  // Resolve the site's saved config from the token — the embed tag carries
+  // nothing else. Explicit data-* attrs always win over saved values.
+  if (opts.token) {
+    fetch(api + "/widget-config?token=" + encodeURIComponent(opts.token))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (cfg) {
+        if (!cfg) return;
+        if (!explicit.url && cfg.url) { opts.url = cfg.url; hostLabel(); }
+        if (!explicit.name && cfg.name) opts.name = cfg.name;
+        if (!explicit.greeting && cfg.greeting) opts.greeting = cfg.greeting;
+        if (!explicit.colour && /^#[0-9a-fA-F]{6}$/.test(cfg.colour || "")) opts.colour = cfg.colour;
+        applyTheme();
+      })
+      .catch(function () { /* defaults are fine */ });
+  }
 
   function bubble(cls, html) {
     var m = document.createElement("div");
