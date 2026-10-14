@@ -82,8 +82,7 @@
     "</style>" +
     '<button id="launch" title="Chat with us"><svg viewBox="0 0 24 24" width="27" height="27"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-4 9H8V9h8zm-6 4v-2h8v2z"/></svg></button>' +
     '<div id="pop">' +
-    '  <div id="head"><img src="' + api + '/static/favicon.svg" width="22" height="22" alt="">' +
-    '    <span class="name"></span><span class="host"></span>' +
+    '  <div id="head"><span class="name"></span><span class="host"></span>' +
     '    <button class="clear" title="New conversation">&#8635;</button>' +
     '    <button class="close" title="Close">&times;</button></div>' +
     '  <div id="chat"><div class="msg bot greet"></div></div>' +
