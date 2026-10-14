@@ -100,6 +100,7 @@
   .site-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .site .m { color: var(--dim); font-size: 13px; }
   .site .tw { cursor: pointer; user-select: none; font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .site .ri { padding: 6px 12px; font-size: 12px; border-radius: 8px; min-width: 74px; }
   .site-wrap { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; }
 
   /* crawl tree */
@@ -386,7 +387,22 @@ async function loadSites() {
         ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
         : "") +
       `<span class="m">${new Date(s.indexed_at*1000).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})}</span></div>` +
-      `<span class="tw">tree ▾</span>`;
+      `<div style="display:flex;gap:10px;align-items:center;flex-shrink:0"><button class="cta ri">reindex</button><span class="tw">tree ▾</span></div>`;
+    const reBtn = row.querySelector(".ri");
+    reBtn.onclick = async (e) => {
+      e.stopPropagation();
+      reBtn.disabled = true;
+      try {
+        const body = { url: s.url };
+        if (s.pages?.length) body.limit = s.pages.length;
+        if (s.phone) body.phone = s.phone;
+        if (s.email) body.email = s.email;
+        const st = await postAndPoll("/index", body, r =>
+          reBtn.textContent = r.progress ? `${r.progress.node} ${r.progress.done}/${r.progress.total}` : "…");
+        reBtn.textContent = st.status === "done" ? "done" : "failed";
+      } catch { reBtn.textContent = "failed"; }
+      loadSites();
+    };
     const treeHolder = document.createElement("div");
     treeHolder.style.display = "none";
     treeHolder.style.padding = "0 14px 10px";
