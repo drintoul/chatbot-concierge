@@ -618,16 +618,7 @@ Your installation code automatically loads your saved chatbot settings:
 - Welcome greeting
 - Accent colour
 - Indexed website content
-You don't need to modify the code or configure anything else.
-
-One technical recommendation
-Your current implementation uses:
-widget.js?token=${tk}
-This is perfectly reasonable for identifying a chatbot configuration.
-However, consider using a generated, opaque identifier instead of a recognizable business name:
-widget.js?token=cb_a7f3e91d
-This avoids predictable identifiers and makes it easier to regenerate identifiers independently of business names.
-Important: The token is publicly visible in the page source. It must only identify the chatbot configuration, never grant privileged access to backend APIs or another tenant's content. Enforce tenant isolation server-side.`;
+You don't need to modify the code or configure anything else.`;
   await navigator.clipboard.writeText(text);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);
