@@ -201,6 +201,7 @@ services:
       FIRECRAWL_URL: http://firecrawl-api:3002
       SCREENSHOT_URL: http://screenshotter:3000
       CHATBOT_CONCIERGE_DB_PATH: /data/langgraph.db
+      TZ: ${CONCIERGE_TZ:-America/Vancouver}
     volumes:
       - chatbot-concierge-data:/data
     depends_on:

@@ -24,6 +24,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Annotated, Any, Literal, TypedDict
 from urllib.parse import urlparse
 
@@ -45,6 +46,9 @@ SCREENSHOT = os.environ.get("SCREENSHOT_URL", "").rstrip("/")
 CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("CHATBOT_CONCIERGE_DB_PATH", "/data/langgraph.db")
+# Business-local timezone for resolving "tonight/this weekend" — containers
+# run UTC, which is already tomorrow for Pacific evenings.
+TZ = ZoneInfo(os.environ.get("TZ", "UTC"))
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
@@ -918,7 +922,10 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
                 "temperature": 0,  # deterministic decode
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"CONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
+                    # TODAY pins "tonight/today/tomorrow/this weekend" to a
+                    # real weekday — without it the model guesses one and the
+                    # verify pass can't catch the invented premise.
+                    {"role": "user", "content": f"TODAY: {datetime.now(TZ):%A, %B %-d, %Y}\n\nCONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
                 ],
             },
         )
