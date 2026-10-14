@@ -65,6 +65,22 @@ _EXTRA_ZONES = {
     "America/Rainy_River": -94.57,
 }
 
+# Colloquial zone names — tzdata only ships identifiers, not these.
+_TZ_FRIENDLY = {
+    "America/St_Johns": "Newfoundland Time",
+    "America/Halifax": "Atlantic Time", "America/Blanc-Sablon": "Atlantic Time",
+    "America/Toronto": "Eastern Time", "America/Atikokan": "Eastern Time",
+    "America/Winnipeg": "Central Time", "America/Regina": "Central Time",
+    "America/Edmonton": "Mountain Time", "America/Whitehorse": "Mountain Time",
+    "America/Vancouver": "Pacific Time",
+    "America/Puerto_Rico": "Atlantic Time", "America/New_York": "Eastern Time",
+    "America/Chicago": "Central Time", "America/Denver": "Mountain Time",
+    "America/Phoenix": "Mountain Time", "America/Los_Angeles": "Pacific Time",
+    "America/Anchorage": "Alaska Time", "America/Adak": "Hawaii-Aleutian Time",
+    "Pacific/Honolulu": "Hawaii-Aleutian Time", "Pacific/Pago_Pago": "Samoa Time",
+    "Pacific/Guam": "Chamorro Time",
+}
+
 # When several zones behave identically, keep the recognizable one.
 _TZ_PREFERRED = [
     "America/St_Johns", "America/Halifax", "America/Blanc-Sablon",
@@ -162,6 +178,9 @@ def _selectable_timezones() -> list[dict[str, Any]]:
         )
         if aliases:
             display += " · " + " · ".join(aliases)
+        friendly = _TZ_FRIENDLY.get(zone)
+        if friendly:
+            display = f"{friendly} — {display}"
         off = _fmt_off(winter) if winter == summer \
             else f"{_fmt_off(winter)} winter · {_fmt_off(summer)} summer"
         out.append({"zone": zone, "label": f"{display} ({off})",
