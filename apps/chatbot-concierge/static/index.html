@@ -238,7 +238,7 @@
       <label>Embed this widget</label>
       <div class="hint" style="margin-bottom:12px">Paste it just before the closing <code>&lt;/body&gt;</code> tag of your site — the launcher bubble floats bottom-right over your page:</div>
       <pre id="embed-demo"></pre>
-      <button class="cta" id="e-copy">Copy snippet</button>
+      <button class="cta" id="e-copy">Copy instructions</button>
       <span class="hint" id="e-copied" style="margin-left:12px"></span>
     </div>
   </section>
@@ -556,7 +556,18 @@ for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
   });
 }
 $("e-copy").onclick = async () => {
-  await navigator.clipboard.writeText(snippetText);
+  const text =
+`Add the concierge chatbot to your website:
+
+1. Open your site's HTML (or your site builder's "custom HTML / embed code"
+   setting — WordPress, Squarespace, Wix and Shopify all have one).
+2. Paste this line just before the closing </body> tag:
+
+${snippetText}
+
+3. Save and publish. A chat bubble will appear in the bottom-right corner
+   of your site and answer visitors from your indexed content.`;
+  await navigator.clipboard.writeText(text);
   $("e-copied").textContent = "copied!";
   setTimeout(() => ($("e-copied").textContent = ""), 2000);
 };
