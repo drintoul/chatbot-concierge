@@ -49,11 +49,12 @@
     "  box-shadow: 0 18px 60px rgba(0,0,0,.6); font-size: 15px; color: #e9f0ec; }" +
     "#pop.open { display: flex; }" +
     "#head { display: flex; align-items: center; gap: 10px; padding: 14px 18px;" +
-    "  background: #1a2420; border-bottom: 2px solid #2a3833; font-weight: 800; }" +
-    "#head .host { color: #8ba398; font-weight: 600; font-size: 13px; }" +
-    "#head button { background: none; border: 0; color: #8ba398; font-size: 24px;" +
+    "  background: var(--cc); border-bottom: 2px solid #2a3833; font-weight: 800;" +
+    "  color: var(--cc-fg); }" +
+    "#head .host { color: var(--cc-fg); opacity: .65; font-weight: 600; font-size: 13px; }" +
+    "#head button { background: none; border: 0; color: var(--cc-fg); opacity: .75; font-size: 24px;" +
     "  line-height: 1; cursor: pointer; padding: 0 2px; }" +
-    "#head button:hover { color: #e9f0ec; }" +
+    "#head button:hover { opacity: 1; }" +
     "#head button:first-of-type { margin-left: auto; }" +
     "#head .clear { font-size: 19px; }" +
     "#chat { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0;" +
