@@ -216,18 +216,18 @@
 
     <div class="card" style="margin:0 0 12px;max-width:640px;white-space:normal">
       <label>Customize</label>
-      <div style="display:flex;gap:16px;align-items:end;flex-wrap:wrap">
-        <div>
+      <div style="display:flex;gap:16px;align-items:end">
+        <div style="flex-shrink:0">
           <div class="hint" style="margin-bottom:6px">Accent color</div>
           <input type="color" id="cc-color" value="#34d399" style="width:64px;height:40px;padding:4px;cursor:pointer">
         </div>
-        <div class="grow">
+        <div style="flex:1;min-width:0">
           <div class="hint" style="margin-bottom:6px">Name (title bar)</div>
-          <input id="cc-name" placeholder="concierge" autocomplete="off">
+          <input id="cc-name" placeholder="concierge" autocomplete="off" style="min-width:0">
         </div>
-        <div class="grow">
+        <div style="flex:1.4;min-width:0">
           <div class="hint" style="margin-bottom:6px">Opening question</div>
-          <input id="cc-greeting" placeholder="Hi! How can we help?" autocomplete="off">
+          <input id="cc-greeting" placeholder="Hi! How can we help?" autocomplete="off" style="min-width:0">
         </div>
       </div>
       <div class="hint" style="margin-top:10px">Updates the preview live and the embed snippet below.</div>
