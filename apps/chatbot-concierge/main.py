@@ -281,21 +281,21 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
         for link in body.get("links") or []:
             add_url(link.get("url") if isinstance(link, dict) else link)
 
-        if not urls:
-            # /v2/map leans on sitemap.xml — sites without one (or behind a
-            # storefront CMS like BigCommerce) need scrape-based discovery:
-            # render the seed page and take its same-site links.
-            res = await http.post(
-                f"{FIRECRAWL}/v2/scrape",
-                json={
-                    "url": state["url"],
-                    "formats": ["markdown", "links"],
-                    "onlyMainContent": False,
-                },
-            )
-            res.raise_for_status()
-            for u in (res.json().get("data") or {}).get("links") or []:
-                add_url(u)
+        # Always merge the seed page's own links too: /v2/map leans on the
+        # sitemap and can miss or bury nav links entirely (no sitemap on
+        # storefront CMSs like BigCommerce; high-volume archives flood the
+        # map ordering on Squarespace). Nav links are the strongest signal.
+        res = await http.post(
+            f"{FIRECRAWL}/v2/scrape",
+            json={
+                "url": state["url"],
+                "formats": ["markdown", "links"],
+                "onlyMainContent": False,
+            },
+        )
+        res.raise_for_status()
+        for u in (res.json().get("data") or {}).get("links") or []:
+            add_url(u)
 
         add_url(seed)
         if not urls:
@@ -598,6 +598,18 @@ _INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
 ]
 
 
+# Pages that carry canonical business facts — when an intent fires, chunks
+# from these paths outrank incidental matches on event/blog pages, which are
+# also full of times/dates/prices but answer a different question.
+_CORE_PATH = re.compile(
+    r"^/(contact|about|hours?|find-?us|visit|location|directions|menu|"
+    r"rates?|pric|book|reserv|stay|rooms?|accommodation|faq|info|"
+    r"where-to|polic)([/_-]|$)",
+    re.I,
+)
+CORE_BOOST = 0.12
+
+
 _STOPWORDS = frozenset(
     "a an the is are was were do does did can could should would will i you we they "
     "it its this that what which who whom how when where why much many any some "
@@ -640,6 +652,10 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
         idf = {w: math.log(1 + n / (df[w] or 1)) for w in q_terms}
         idf_total = sum(idf.values()) or 1
         intents = [(hint, b) for qr, hint, b in _INTENTS if qr.search(q)]
+        core_hit = [
+            bool(intents) and bool(_CORE_PATH.search(urlparse(c["source"]).path or ""))
+            for c in chunks
+        ]
 
         scored = sorted(
             (
@@ -647,7 +663,8 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     "index": i,
                     "score": 0.55 * _cos(qv, qn, e, norms[i])
                     + 0.3 * sum(idf[w] for w in q_terms & c_terms[i]) / idf_total
-                    + sum(b for hint, b in intents if hint.search(c["text"])),
+                    + sum(b for hint, b in intents if hint.search(c["text"]))
+                    + (CORE_BOOST if core_hit[i] else 0.0),
                     "text": c["text"],
                     "source": c["source"],
                 }
