@@ -123,6 +123,12 @@ test("query workflow answers from the stored corpus", async () => {
 // runs don't pollute the demo's indexed sites or audit log.
 test("delete site removes the test corpus and its audit events", async () => {
   const ctx = await request.newContext();
+  // The query run logged an audit event — the clear endpoint removes it.
+  const audit = await ctx.delete(
+    `${CHATBOT_CONCIERGE}/audit?url=${encodeURIComponent(SITE)}`
+  );
+  expect(audit.ok()).toBeTruthy();
+
   const res = await ctx.delete(`${CHATBOT_CONCIERGE}/sites?url=${encodeURIComponent(SITE)}`);
   expect(res.ok(), `delete failed: ${await res.text()}`).toBeTruthy();
   const body = (await res.json()) as { deleted: boolean };

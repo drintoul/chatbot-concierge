@@ -1103,6 +1103,21 @@ async def list_audit(limit: int = 50, url: str | None = None) -> dict[str, Any]:
     return {"events": out}
 
 
+@app.delete("/audit")
+async def clear_audit(url: str | None = None) -> dict[str, int]:
+    """Clear audit events — one site when url is given, all sites otherwise."""
+    if url:
+        async with _db.execute(
+            "DELETE FROM events WHERE url=?", (_canon(url),)
+        ) as cur:
+            n = cur.rowcount
+    else:
+        async with _db.execute("DELETE FROM events") as cur:
+            n = cur.rowcount
+    await _db.commit()
+    return {"deleted": n}
+
+
 _PDF_MAP = str.maketrans({"→": "->", "’": "'", "‘": "'", "“": '"', "”": '"',
                           "–": "-", "—": "-", "…": "...", "·": "-"})
 

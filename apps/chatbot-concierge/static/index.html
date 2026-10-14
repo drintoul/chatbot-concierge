@@ -250,6 +250,7 @@
         <select id="a-site"></select>
       </div>
       <button id="a-pdf" class="cta">Save PDF</button>
+      <button id="a-clear" class="cta" style="background:none;border:2px solid var(--line);color:var(--dim)">Clear log</button>
     </div>
     <div id="audit"></div>
   </section>
@@ -588,6 +589,13 @@ async function loadAudit() {
   }
 }
 $("a-site").onchange = loadAudit;
+$("a-clear").onclick = async () => {
+  const u = $("a-site").value;
+  const what = u || "ALL sites";
+  if (!confirm(`Delete all audit events for ${what}?`)) return;
+  await fetch("/audit" + (u ? "?url=" + encodeURIComponent(u) : ""), { method: "DELETE" });
+  loadAudit();
+};
 $("a-pdf").onclick = () => {
   const u = $("a-site").value;
   window.location.href = "/audit/pdf" + (u ? "?url=" + encodeURIComponent(u) : "");
