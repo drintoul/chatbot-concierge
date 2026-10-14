@@ -113,11 +113,13 @@
   .tree-box h2 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 800; margin: 0 0 10px; }
 
   /* chatbot — embedded-widget preview (widget DOM/styles live in /static/widget.js) */
-  #embed-code {
+  #embed-code, #embed-demo {
     font-family: ui-monospace, monospace; font-size: 13px; color: var(--txt);
     background: var(--bg); border: 2px solid var(--line); border-radius: 10px;
     padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; word-break: break-all;
   }
+  #embed-demo .dim { color: var(--dim); }
+  #embed-demo .hl { color: var(--accent); }
 
 
   /* audit */
@@ -207,6 +209,8 @@
     <div class="card" style="margin:0;max-width:640px;white-space:normal">
       <label>Embed this widget</label>
       <pre id="embed-code"></pre>
+      <div class="hint" style="margin-bottom:12px">Paste it just before the closing <code>&lt;/body&gt;</code> tag of your site — the launcher bubble floats bottom-right over your page:</div>
+      <pre id="embed-demo"></pre>
       <button class="cta" id="e-copy">Copy snippet</button>
       <span class="hint" id="e-copied" style="margin-left:12px"></span>
     </div>
@@ -471,9 +475,21 @@ function chatBg() {
 
 function syncSnippet() {
   const u = $("c-site").value;
-  $("embed-code").textContent = u
+  const snippet = u
     ? `<script src="${location.origin}/static/widget.js" data-url="${u}" async><\/script>`
     : "";
+  $("embed-code").textContent = snippet;
+  const demo = $("embed-demo");
+  demo.innerHTML = "";
+  for (const [cls, t] of [
+    ["dim", "<body>\n  …\n  <header>My Business</header>\n  <main>Welcome!</main>\n  <footer>© My Business</footer>\n\n"],
+    ["hl", "  " + snippet + "\n"],
+    ["dim", "</body>\n</html>"],
+  ]) {
+    const s = document.createElement("span");
+    s.className = cls; s.textContent = t;
+    demo.appendChild(s);
+  }
 }
 $("e-copy").onclick = async () => {
   await navigator.clipboard.writeText($("embed-code").textContent);
