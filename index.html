@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Widget Test</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 80px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Chatbot Widget Test Page</h1>
+        <p>This is a dummy HTML page for testing the chatbot widget.</p>
+        <p>The widget should automatically initialize when the page loads.</p>
+    </div>
+
+    <!-- Chatbot Widget -->
+    <script
+        src="http://localhost:8000/static/widget.js"
+        data-url="https://farmhousebrewing.co/"
+        async>
+    </script>
+
+</body>
+</html>

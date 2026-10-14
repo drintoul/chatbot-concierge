@@ -104,6 +104,36 @@ def bail(state: ChatbotConciergeState) -> bool:
 
 # ------------------------------------------------------- index-graph nodes
 
+# Corpus hygiene: crawl discovers, then we keep only indexable pages.
+_JUNK_PATH = re.compile(
+    r"^/(wp-(admin|login|json)|login|logout|log-out|sign-?in|sign-?up|"
+    r"register|account[^/]*|dashboard|password[^/]*|forgot[^/]*|reset|"
+    r"admin|edit(-[^/]*)?|submission[^/]*|cart|checkout|search|feed|"
+    r"comments?|category|tags?|author|page/\d+|20\d\d)(/|$)",
+    re.I,
+)
+MAX_PREFIX_PAGES = 30  # detail-series budget per first path segment
+
+
+def _kept_pages(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """Drop junk paths and cap deep detail series (/events/x, /post/x…) —
+    hundreds of near-identical event/blog pages bury the core pages that
+    actually answer 'what are your hours'."""
+    kept, budget = [], {}
+    for p in pages:
+        path = (urlparse(p["url"]).path or "/").lower()
+        if _JUNK_PATH.search(path):
+            continue
+        segments = path.strip("/").split("/")
+        if len(segments) > 1:
+            used = budget.get(segments[0], 0)
+            if used >= MAX_PREFIX_PAGES:
+                continue
+            budget[segments[0]] = used + 1
+        kept.append(p)
+    return kept, len(pages) - len(kept)
+
+
 async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
     """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
     hops from the seed URL up to CRAWL_LIMIT pages."""
@@ -167,11 +197,14 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             })
         if not pages:
             raise RuntimeError("crawl returned no usable pages")
+        pages, dropped = _kept_pages(pages)
+        if not pages:
+            raise RuntimeError("crawl returned only junk pages (login/archive/CMS)")
         return {
             "pages": pages,
             "screenshot": await _shot(http, state["url"]),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
-                           pages=len(pages), job=job_id)],
+                           pages=len(pages), dropped=dropped, job=job_id)],
         }
     except Exception as e:
         return fail(state, "crawl", e)
