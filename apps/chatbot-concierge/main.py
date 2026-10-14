@@ -58,12 +58,24 @@ _TZ_COUNTRIES = frozenset({"US", "CA", "PR", "VI", "GU", "AS", "MP"})
 
 
 # Well-known Canadian zones that exist as link aliases (not zone.tab rows) —
-# Montreal is the one customers will actually look for.
+# they fold into their behavior group but get a mention in its label.
 _EXTRA_ZONES = {
     "America/Pangnirtung": -65.71, "America/Montreal": -73.57,
     "America/Nipigon": -88.27, "America/Thunder_Bay": -89.25,
     "America/Rainy_River": -94.57,
 }
+
+# When several zones behave identically, keep the recognizable one.
+_TZ_PREFERRED = [
+    "America/St_Johns", "America/Halifax", "America/Blanc-Sablon",
+    "America/Toronto", "America/Atikokan", "America/Winnipeg",
+    "America/Regina", "America/Edmonton", "America/Vancouver",
+    "America/Whitehorse",
+    "America/Puerto_Rico", "America/New_York", "America/Chicago",
+    "America/Denver", "America/Phoenix", "America/Los_Angeles",
+    "America/Anchorage", "America/Adak", "Pacific/Honolulu",
+    "Pacific/Pago_Pago", "Pacific/Guam",
+]
 
 
 def _zone_lon(coord: str) -> float:
@@ -78,12 +90,28 @@ def _zone_lon(coord: str) -> float:
     return lon if lon <= 0 else lon - 360
 
 
+def _off_pair(zone: str) -> tuple[float, float]:
+    """(winter, summer) UTC offsets in hours — the zone's whole behavior
+    for date purposes. (-8.0, -7.0) = DST; (-7.0, -7.0) = fixed."""
+    zi = ZoneInfo(zone)
+    y = datetime.now().year
+    jan = datetime(y, 1, 15, tzinfo=zi).utcoffset().total_seconds() / 3600
+    jul = datetime(y, 7, 15, tzinfo=zi).utcoffset().total_seconds() / 3600
+    return (min(jan, jul), max(jan, jul))
+
+
+def _fmt_off(hours: float) -> str:
+    h, m = divmod(abs(hours) * 60, 60)
+    return f"UTC{'-' if hours < 0 else '+'}{int(h)}" + (f":{int(m):02d}" if m else "")
+
+
 def _selectable_timezones() -> list[dict[str, Any]]:
-    """Canonical US/CA zones (plus a few link aliases for major cities),
-    read from the shipped tzdata so newly-created zones appear when the
-    package updates. Ordered Canada-first, then east→west by longitude.
-    Canadian zones display as "Canada/<city>" — the stored value stays the
-    canonical America/* name."""
+    """US/CA zones, deduplicated by behavior: zones that keep identical
+    local time year-round (e.g. all nine Indiana/* variants, Montreal ~
+    Toronto) collapse to one entry. Read from the shipped tzdata so
+    newly-created zones appear when the package updates. Ordered
+    Canada-first, then east→west by longitude. Canadian zones display
+    as "Canada/<city>"; the stored value stays canonical America/*."""
     import tzdata  # bundled zone files; also try the OS copy as fallback
     candidates = [
         os.path.join(os.path.dirname(tzdata.__file__), "zoneinfo", "zone.tab"),
@@ -110,17 +138,35 @@ def _selectable_timezones() -> list[dict[str, Any]]:
             pass
     if not entries:
         return [{"zone": TZ_NAME, "label": TZ_NAME}]
-    out = [
-        {
-            "zone": zone,
-            "label": ("Canada/" + zone.split("/", 1)[1])
-                     if country == "CA" and zone.startswith("America/") else zone,
-            "country": country,
-            "lon": lon,
-        }
-        for zone, (country, lon) in entries.items()
-    ]
-    out.sort(key=lambda r: (r["country"] != "CA", -r["lon"], r["zone"]))
+
+    # Collapse by (country side, winter/summer offsets) — identical
+    # behavior means the duplicate zones are pure noise in a dropdown.
+    groups: dict[tuple[bool, tuple[float, float]], list[tuple[str, float]]] = {}
+    for zone, (country, lon) in entries.items():
+        key = (country == "CA", _off_pair(zone))
+        groups.setdefault(key, []).append((zone, lon))
+
+    out = []
+    for (is_ca, (winter, summer)), members in groups.items():
+        zone, lon = min(
+            members,
+            key=lambda m: (_TZ_PREFERRED.index(m[0])
+                           if m[0] in _TZ_PREFERRED else 999, m[0]),
+        )
+        display = ("Canada/" + zone.split("/", 1)[1]) \
+            if is_ca and zone.startswith("America/") else zone
+        aliases = sorted(
+            "Canada/" + z.split("/", 1)[1]
+            for z, _ in members
+            if z in _EXTRA_ZONES and z != zone
+        )
+        if aliases:
+            display += " · " + " · ".join(aliases)
+        off = _fmt_off(winter) if winter == summer \
+            else f"{_fmt_off(winter)} winter · {_fmt_off(summer)} summer"
+        out.append({"zone": zone, "label": f"{display} ({off})",
+                    "is_ca": is_ca, "lon": lon})
+    out.sort(key=lambda r: (not r["is_ca"], -r["lon"], r["zone"]))
     return out
 TOP_K = 6
 MIN_SIMILARITY = 0.15
