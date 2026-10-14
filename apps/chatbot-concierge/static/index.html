@@ -40,6 +40,8 @@
     background: var(--panel2);
   }
   .tab:hover:not(.active) { color: var(--txt); border-color: var(--dim); }
+  .tab-chat { border-color: var(--wcc, var(--accent)); }
+  .tab-chat:not(.active) { color: var(--wcc, var(--accent)); }
   .pane { display: none; }
   .pane.active { display: block; animation: in .2s ease; }
   #chat-bg {
@@ -147,7 +149,7 @@
   <div class="tabs">
     <button class="tab active" data-t="index">① Index site</button>
     <button class="tab" data-t="query">② Query</button>
-    <button class="tab" data-t="chat">③ Chatbot</button>
+    <button class="tab tab-chat" data-t="chat">③ Chatbot</button>
     <button class="tab" data-t="audit">④ Audit</button>
     <button class="tab" data-t="sites">⑤ Sites</button>
   </div>
@@ -533,6 +535,7 @@ function syncSnippet() {
 }
 for (const id of ["cc-color", "cc-name", "cc-greeting"]) {
   $(id).addEventListener("input", () => {
+    document.documentElement.style.setProperty("--wcc", $("cc-color").value);
     window.ConciergeWidget?.setTheme({
       name: $("cc-name").value.trim(),
       greeting: $("cc-greeting").value.trim(),
