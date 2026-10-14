@@ -49,8 +49,8 @@ MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
 ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
 CRAWL_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_LIMIT", "15"))
-CRAWL_DEPTH = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_DEPTH", "2"))
 CRAWL_TIMEOUT_S = float(os.environ.get("CHATBOT_CONCIERGE_CRAWL_TIMEOUT", "900"))
+MAP_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_MAP_LIMIT", "500"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
@@ -66,7 +66,6 @@ class ChatbotConciergeState(TypedDict, total=False):
     url: str
     question: str | None
     crawl_limit: int
-    crawl_depth: int
     pages: list[dict[str, Any]]          # [{url, title, markdown}]
     phone: str | None                    # operator-provided contact number
     email: str | None                    # operator-provided contact email
@@ -116,10 +115,31 @@ _JUNK_PATH = re.compile(
 MAX_PREFIX_PAGES = 30  # detail-series budget per first path segment
 
 
+def _pick_urls(urls: list[str], limit: int) -> tuple[list[str], int]:
+    """Choose which mapped URLs are worth scraping: drop junk paths, sort
+    shallow/core paths ahead of deep detail pages (stable — discovery order
+    survives within a depth), then cap each first-segment series."""
+    def depth(u: str) -> int:
+        return len([s for s in urlparse(u).path.split("/") if s])
+
+    cand = [u for u in urls if not _JUNK_PATH.search((urlparse(u).path or "/").lower())]
+    cand.sort(key=depth)
+    kept, budget = [], {}
+    for u in cand:
+        segments = [s for s in urlparse(u).path.strip("/").split("/") if s]
+        if len(segments) > 1:
+            used = budget.get(segments[0], 0)
+            if used >= MAX_PREFIX_PAGES:
+                continue
+            budget[segments[0]] = used + 1
+        kept.append(u)
+    picked = kept[:limit]
+    return picked, len(urls) - len(picked)
+
+
 def _kept_pages(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    """Drop junk paths and cap deep detail series (/events/x, /post/x…) —
-    hundreds of near-identical event/blog pages bury the core pages that
-    actually answer 'what are your hours'."""
+    """Post-scrape safety pass — same junk/prefix rules as _pick_urls, in case
+    a scrape redirected into a dropped family."""
     kept, budget = [], {}
     for p in pages:
         path = (urlparse(p["url"]).path or "/").lower()
@@ -136,50 +156,78 @@ def _kept_pages(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]
 
 
 async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
-    """Firecrawl /v2/crawl — async job, follows same-site links CRAWL_DEPTH
-    hops from the seed URL up to CRAWL_LIMIT pages."""
+    """Map the site (cheap URL discovery), curate the URL list, then
+    batch-scrape only the selected pages — scrape budget never goes to junk."""
     if bail(state):
         return {}
     run_id = config["configurable"]["thread_id"]
     limit = state.get("crawl_limit") or CRAWL_LIMIT
     t0 = time.time()
     try:
+        # 1) Map — discover URLs without rendering page bodies.
         res = await http.post(
-            f"{FIRECRAWL}/v2/crawl",
+            f"{FIRECRAWL}/v2/map",
+            json={"url": state["url"], "limit": MAP_LIMIT},
+        )
+        res.raise_for_status()
+        body = res.json()
+        if not body.get("success", True):
+            raise RuntimeError(f"map failed: {str(body)[:200]}")
+        seed = state["url"].split("#")[0].rstrip("/")
+        urls, seen = [], set()
+        for link in body.get("links") or []:
+            u = link.get("url") if isinstance(link, dict) else link
+            u = (u or "").split("#")[0].rstrip("/")
+            if u and u not in seen:
+                seen.add(u)
+                urls.append(u)
+        if seed and seed not in seen:
+            urls.insert(0, seed)
+        if not urls:
+            raise RuntimeError("map returned no URLs")
+
+        # 2) Curate at URL level — core paths first, junk and excess series
+        # never consume a scrape slot.
+        picked, dropped = _pick_urls(urls, limit)
+        if not picked:
+            raise RuntimeError("map returned only junk URLs (login/archive/CMS)")
+
+        # 3) Batch-scrape the selected URLs — same async job shape as crawl.
+        res = await http.post(
+            f"{FIRECRAWL}/v2/batch/scrape",
             json={
-                "url": state["url"],
-                "limit": limit,
-                "maxDiscoveryDepth": state.get("crawl_depth") or CRAWL_DEPTH,
-                "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
+                "urls": picked,
+                "formats": ["markdown"],
+                "onlyMainContent": True,
             },
         )
         res.raise_for_status()
         body = res.json()
         job_id = body.get("id") or (body.get("data") or {}).get("id")
         if not body.get("success", True) or not job_id:
-            raise RuntimeError(f"crawl submit failed: {str(body)[:200]}")
+            raise RuntimeError(f"batch scrape submit failed: {str(body)[:200]}")
 
         deadline = t0 + CRAWL_TIMEOUT_S
         while True:
             await asyncio.sleep(3)
-            poll = await http.get(f"{FIRECRAWL}/v2/crawl/{job_id}")
+            poll = await http.get(f"{FIRECRAWL}/v2/batch/scrape/{job_id}")
             poll.raise_for_status()
             job = poll.json()
             _progress[run_id] = {
                 "node": "crawl",
                 "done": job.get("completed") or 0,
-                "total": job.get("total") or limit,
+                "total": job.get("total") or len(picked),
             }
             if job.get("status") == "completed":
                 break
             if job.get("status") in ("failed", "cancelled") or time.time() > deadline:
-                raise RuntimeError(f"crawl job {job_id} {job.get('status') or 'timed out'}")
+                raise RuntimeError(f"batch scrape job {job_id} {job.get('status') or 'timed out'}")
 
         # Results paginate at 100 pages — follow `next` until exhausted.
         data = list(job.get("data") or [])
         while job.get("next"):
             nxt = await http.get(
-                f"{FIRECRAWL}/v2/crawl/{job_id}", params={"skip": len(data)}
+                f"{FIRECRAWL}/v2/batch/scrape/{job_id}", params={"skip": len(data)}
             )
             nxt.raise_for_status()
             job = nxt.json()
@@ -198,14 +246,15 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             })
         if not pages:
             raise RuntimeError("crawl returned no usable pages")
-        pages, dropped = _kept_pages(pages)
+        pages, dropped2 = _kept_pages(pages)
         if not pages:
-            raise RuntimeError("crawl returned only junk pages (login/archive/CMS)")
+            raise RuntimeError("scrape returned no usable pages")
         return {
             "pages": pages,
             "screenshot": await _shot(http, state["url"]),
             "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
-                           pages=len(pages), dropped=dropped, job=job_id)],
+                           mapped=len(urls), pages=len(pages),
+                           dropped=dropped + dropped2, job=job_id)],
         }
     except Exception as e:
         return fail(state, "crawl", e)
@@ -316,6 +365,16 @@ def _canon(url: str) -> str:
     return url.rstrip("/") + "/"
 
 
+def _site_title(state: ChatbotConciergeState) -> str | None:
+    """Site title from the homepage page, not whichever page listed first."""
+    pages = state.get("pages") or []
+    seed = _canon(state.get("url", "")).rstrip("/")
+    for p in pages:
+        if (p.get("url") or "").rstrip("/") == seed:
+            return p.get("title")
+    return (pages[0] if pages else {}).get("title")
+
+
 async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
     """Persist the corpus so query runs reuse it — no re-crawl per question."""
     if bail(state):
@@ -335,7 +394,7 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
              indexed_at=excluded.indexed_at""",
         (
             url,
-            (state.get("pages") or [{}])[0].get("title"),
+            _site_title(state),
             json.dumps([{k: p[k] for k in ("url", "title")} for p in state.get("pages", [])]),
             json.dumps(state["chunks"]),
             json.dumps(state["embeddings"]),
@@ -732,7 +791,6 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 class IndexRequest(BaseModel):
     url: HttpUrl
     limit: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_LIMIT when set
-    depth: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_DEPTH when set
     phone: str | None = None  # contact number for handoff answers
     email: str | None = None  # contact email for handoff answers
     keep_contacts: bool = False  # preserve existing phone/email on reindex
@@ -804,8 +862,6 @@ async def start_index(req: IndexRequest) -> dict[str, str]:
     initial: ChatbotConciergeState = {"url": str(req.url)}
     if req.limit:
         initial["crawl_limit"] = req.limit
-    if req.depth:
-        initial["crawl_depth"] = req.depth
     if req.phone:
         initial["phone"] = req.phone.strip() or None
     if req.email:
@@ -977,7 +1033,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
         "status": v.get("status", "running"),
         "url": v.get("url"),
         "question": v.get("question"),
-        "title": (v.get("pages") or [{}])[0].get("title"),
+        "title": _site_title(v),
         "phone": v.get("phone"),
         "email": v.get("email"),
         "page_count": len(v.get("pages") or []),

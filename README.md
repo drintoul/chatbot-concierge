@@ -16,8 +16,9 @@ playwright, or firecrawl are used. To move to a VPS, copy this repo, set
 
 ![Index tab](docs/index-tab.png)
 
-*① Index site — one-time crawl → chunk → embed → store per site, with
-optional contact info used in handoff replies and per-run page/depth limits.*
+*① Index site — one-time map → curate → scrape → chunk → embed → store per
+site, with optional contact info used in handoff replies and a per-run page
+limit.*
 
 ![Chatbot tab](docs/chatbot-tab.png)
 
@@ -46,7 +47,7 @@ First boot pulls images (~4 GB) and then the ollama models
 | Service   | Local URL                   | Notes                          |
 | --------- | --------------------------- | ------------------------------ |
 | Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
-| Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/crawl` |
+| Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/map`, `/v2/batch/scrape` |
 | Chatbot concierge | `http://localhost:8000`     | Demo UI at `/`, API at `/docs` |
 
 > **Port note:** a host-installed Ollama typically owns `localhost:11434`.
@@ -104,12 +105,12 @@ docker compose --profile test run --rm e2e
          │ FIRECRAWL_URL
 ┌────────┴─────────┐
 │ chatbot-concierge│ :8000 — two checkpointed LangGraph workflows:
-│ index: crawl →   │      index (crawl→chunk→embed→store) builds a
+│ index: map →     │      index (map→scrape→chunk→embed→store) builds a
 │ chunk → embed →  │      persistent corpus per site; query
 │ store            │      (load→retrieve→answer) reuses it — no
 │ query: load →    │      re-crawl per question. Demo UI at /.
-│ retrieve → answer│      Tune via CHATBOT_CONCIERGE_CRAWL_LIMIT / _DEPTH /
-└──────────────────┘      _TIMEOUT env vars.
+│ retrieve → answer│      Tune via CHATBOT_CONCIERGE_CRAWL_LIMIT /
+└──────────────────┘      _MAP_LIMIT / _TIMEOUT env vars.
 ```
 
 There is no standalone Playwright service — `firecrawl-playwright` is
