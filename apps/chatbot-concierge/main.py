@@ -1317,6 +1317,9 @@ _EXTRACT_PROMPT = (
     "invent a value): "
     '{"business_name": str, "what_they_do": str (one sentence), '
     '"address": str, "phone": str, "email": str, "hours": [str], '
+    '"locations": [{"name": str, "address": str, "phone": str, '
+    '"hours": [str]}] (only when the business has more than one — each '
+    "location's own address/phone/hours, never merged), "
     '"amenities": [str], "services_or_menu": [str], "prices": [str], '
     '"policies": [str], "booking_or_ordering": [str], "social_links": [str], '
     '"other_facts": [str]}. '

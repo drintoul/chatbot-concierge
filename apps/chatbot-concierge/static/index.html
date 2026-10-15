@@ -745,7 +745,8 @@ $("a-pdf").onclick = () => {
 // ---------- extract (pre-sales fact sheet) ----------
 const XLBL = {
   business_name: "Business", what_they_do: "What they do", address: "Address",
-  phone: "Phone", email: "Email", hours: "Hours", amenities: "Amenities",
+  phone: "Phone", email: "Email", hours: "Hours", locations: "Locations",
+  amenities: "Amenities",
   services_or_menu: "Services / menu", prices: "Prices", policies: "Policies",
   booking_or_ordering: "Booking & ordering", social_links: "Social links",
   other_facts: "Other facts",
@@ -774,7 +775,13 @@ $("f-extract").addEventListener("submit", async (e) => {
       card.className = "card";
       const items = Array.isArray(v) ? v : [v];
       card.innerHTML = `<h2>${lbl}</h2><ul style="margin:0;padding-left:18px">` +
-        items.map(i => `<li style="margin:3px 0">${i}</li>`).join("") + `</ul>`;
+        items.map(i => `<li style="margin:3px 0">${
+          typeof i === "object" && i !== null
+            ? Object.entries(i)
+                .map(([k, v]) => `<b>${k}</b>: ${Array.isArray(v) ? v.join("; ") : v}`)
+                .join("<br>")
+            : i
+        }</li>`).join("") + `</ul>`;
       out.appendChild(card);
     }
     if (!out.querySelector(".card")) {
