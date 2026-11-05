@@ -191,8 +191,9 @@ auth belong to whichever stack owns them.
 
 ## Production / VPS notes
 
-- All published ports bind to `127.0.0.1` — put a reverse proxy in front
-  and keep it that way, or firewall the ports.
+- The concierge port binds all interfaces (it's the public service —
+  reachable on the LAN too); the extractor admin port stays bound to
+  `127.0.0.1`. Keep it that way, or front both with a proxy/firewall.
 - The concierge API has no auth — the widget is meant to be reachable
   cross-origin; gate the admin surface (`/sites`, `/audit`, `/runs`) at the
   proxy instead.
