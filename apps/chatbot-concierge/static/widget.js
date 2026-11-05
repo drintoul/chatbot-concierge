@@ -68,6 +68,7 @@
     "  background: var(--cc); border-bottom: 2px solid #2a3833; font-weight: 800;" +
     "  color: var(--cc-fg); }" +
     "#head .host { color: var(--cc-fg); opacity: .65; font-weight: 600; font-size: 13px; }" +
+    "#head .contact { color: var(--cc-fg); opacity: .6; font-size: 11.5px; }" +
     "#head button { background: none; border: 0; color: var(--cc-fg); opacity: .75; font-size: 24px;" +
     "  line-height: 1; cursor: pointer; padding: 0 2px; }" +
     "#head button:hover { opacity: 1; }" +
@@ -86,6 +87,7 @@
     ".msg.user { align-self: flex-end; color: var(--cc-fg); font-weight: 600;" +
     "  background: linear-gradient(135deg, var(--cc), color-mix(in srgb, var(--cc), #000 22%));" +
     "  border-bottom-right-radius: 6px; }" +
+    ".msg.bot a { color: var(--cc); }" +
     ".msg.bot { align-self: flex-start; background: #1a2420; border: 2px solid #2a3833;" +
     "  border-bottom-left-radius: 6px; }" +
     ".srcs { margin-top: 10px; padding-top: 10px; border-top: 2px solid #2a3833; font-size: 13px; }" +
@@ -99,7 +101,7 @@
     "</style>" +
     '<button id="launch" title="Chat with us"><svg viewBox="0 0 24 24" width="27" height="27"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-4 9H8V9h8zm-6 4v-2h8v2z"/></svg></button>' +
     '<div id="pop">' +
-    '  <div id="head"><span class="name"></span><span class="host"></span>' +
+    '  <div id="head"><span class="name"></span><span class="host"></span><span class="contact"></span>' +
     '    <button class="clear" title="New conversation">&#8635;</button>' +
     '    <button class="close" title="Close">&times;</button></div>' +
     '  <div id="chat"><div class="msg bot greet"></div></div>' +
@@ -140,9 +142,34 @@
         if (!explicit.name && cfg.name) opts.name = cfg.name;
         if (!explicit.greeting && cfg.greeting) opts.greeting = cfg.greeting;
         if (!explicit.colour && /^#[0-9a-fA-F]{6}$/.test(cfg.colour || "")) opts.colour = cfg.colour;
+        // Admin opted the header into showing the site's saved contact info.
+        if (cfg.contact && (cfg.phone || cfg.email)) {
+          root.querySelector(".contact").textContent =
+            "· " + [cfg.phone, cfg.email].filter(Boolean).join(" · ");
+        }
         applyTheme();
       })
       .catch(function () { /* defaults are fine */ });
+  }
+
+  // Minimal markdown → HTML: escape everything, then restore the handful
+  // of constructs the model emits (bold, italic, headers, lists, links).
+  function md(t) {
+    var h = String(t || "")
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    h = h.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+                 '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    h = h.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+         .replace(/\*([^*\n]+)\*/g, "<i>$1</i>");
+    return h.split("\n").map(function (line) {
+      if (/^\s*-{3,}\s*$/.test(line)) return "";
+      var m = line.match(/^(\s*)(#{1,6}\s+|[-*]\s+|\d+\.\s+)(.*)$/);
+      if (!m) return line;
+      var indent = m[1].length >= 2 ? "&nbsp;&nbsp;" : "";
+      if (m[2].charAt(0) === "#") return "<b>" + m[3] + "</b>";
+      if (/^[-*]/.test(m[2])) return indent + "• " + m[3];
+      return indent + m[2] + m[3];
+    }).join("<br>");
   }
 
   function bubble(cls, html) {
@@ -191,8 +218,7 @@
             .then(function (r) { return r.json(); })
             .then(function (st) {
               if (st.status === "running") { setTimeout(poll, 900); return; }
-              typing.innerHTML = (st.answer || st.error || "…")
-                  .replace(/</g, "&lt;").replace(/\n/g, "<br>") +
+              typing.innerHTML = md(st.answer || st.error || "…") +
                 (st.sources && st.sources.length
                   ? '<div class="srcs">source: <a href="' + st.sources[0] + '" target="_blank">' + st.sources[0] + "</a></div>"
                   : "");

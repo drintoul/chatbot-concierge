@@ -1,16 +1,18 @@
-"""Deterministic LangGraph chatbot concierge service — two checkpointed workflows.
+"""Deterministic LangGraph chatbot concierge service — query-only.
 
-index:  crawl (firecrawl, N levels) -> chunk -> embed -> store corpus
-query:  load corpus -> retrieve -> answer
+query:  load corpus -> retrieve -> answer -> verify (loop until grounded)
 
-Indexing a site is the slow part (~1 min): crawl, chunk, embed, then persist
-the corpus in SQLite. Asking questions is fast (~seconds–40s): retrieval and
-a single-chunk LLM call against the stored corpus — no re-crawl per question.
+The knowledge store (the `corpora` table) is built ahead of release by the
+separate `extractor` project — firecrawl/playwright crawl, admin-built
+URLs, chunk -> embed -> store. This service never crawls or re-indexes, so
+the deployed corpus can't be modified by visitors. Asking questions is fast
+(~seconds–40s): retrieval and single-chunk LLM calls against the stored
+corpus — no re-crawl per question.
 
 Every edge is fixed code — the LLM never decides control flow. All runs are
 checkpointed to SQLite (langgraph-checkpoint-sqlite), so GET /runs/{id}
 exposes each node's progression. Determinism: temperature-0 calls,
-deterministic chunker, pure-math hybrid ranking, fixed prompts.
+pure-math hybrid ranking, fixed prompts.
 """
 
 import asyncio
@@ -35,207 +37,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fpdf import FPDF
 from fastapi.staticfiles import StaticFiles
-from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, HttpUrl
 
 OLLAMA = os.environ["OLLAMA_BASE_URL"].rstrip("/")
-FIRECRAWL = os.environ["FIRECRAWL_URL"].rstrip("/")
-SCREENSHOT = os.environ.get("SCREENSHOT_URL", "").rstrip("/")
+QDRANT = os.environ.get("QDRANT_URL", "http://rag-qdrant:6333").rstrip("/")
 CHAT_MODEL = os.environ["OLLAMA_CHAT_MODEL"]
 EMBED_MODEL = os.environ["OLLAMA_EMBED_MODEL"]
 DB_PATH = os.environ.get("CHATBOT_CONCIERGE_DB_PATH", "/data/langgraph.db")
 # Business-local timezone for resolving "tonight/this weekend" — containers
 # run UTC, which is already tomorrow for Pacific evenings. Service-level
-# default; each corpus can carry its own `tz` chosen at index time.
+# default; each corpus can carry its own `tz` set by the extractor.
 TZ = ZoneInfo(os.environ.get("TZ", "UTC"))
-TZ_NAME = os.environ.get("TZ", "UTC")
 
-# Countries whose zones the index form offers: US + Canada proper, plus US
-# territories (PR/VI/GU/AS/MP) which are "timezones in the United States".
-_TZ_COUNTRIES = frozenset({"US", "CA", "PR", "VI"})
-
-
-# Link aliases for major cities missing from zone.tab — folded into their
-# behavior group but shown in its label. Montreal is the only one big
-# enough to be worth surfacing.
-_EXTRA_ZONES = {"America/Montreal": -73.57}
-
-# Colloquial zone names — tzdata only ships identifiers, not these.
-_TZ_FRIENDLY = {
-    "America/St_Johns": "Newfoundland Time",
-    "America/Halifax": "Atlantic Time", "America/Blanc-Sablon": "Atlantic Time",
-    "America/Toronto": "Eastern Time", "America/Atikokan": "Eastern Time",
-    "America/Winnipeg": "Central Time", "America/Regina": "Central Time",
-    "America/Edmonton": "Mountain Time", "America/Whitehorse": "Mountain Time",
-    "America/Vancouver": "Pacific Time",
-    "America/Puerto_Rico": "Atlantic Time", "America/New_York": "Eastern Time",
-    "America/Chicago": "Central Time", "America/Denver": "Mountain Time",
-    "America/Phoenix": "Mountain Time", "America/Los_Angeles": "Pacific Time",
-    "America/Anchorage": "Alaska Time", "America/Adak": "Hawaii-Aleutian Time",
-    "Pacific/Honolulu": "Hawaii-Aleutian Time", "Pacific/Pago_Pago": "Samoa Time",
-    "Pacific/Guam": "Chamorro Time",
-}
-
-# Provincial/state capitals that fall inside each representative zone.
-# A capital inherits the timezone of the zone row it appears on — e.g.
-# Pierre is Central (SD straddles the line, but the capital sits west
-# of the Missouri River boundary's Central side).
-_TZ_CAPITALS = {
-    "America/St_Johns": ["St. John's"],
-    "America/Halifax": ["Halifax", "Fredericton", "Charlottetown"],
-    "America/Toronto": ["Toronto", "Quebec City", "Iqaluit"],
-    "America/Winnipeg": ["Winnipeg"],
-    "America/Regina": ["Regina"],
-    "America/Edmonton": ["Edmonton", "Yellowknife"],
-    "America/Vancouver": ["Victoria"],
-    "America/Whitehorse": ["Whitehorse"],
-    "America/Puerto_Rico": ["San Juan", "Charlotte Amalie"],
-    "America/New_York": [
-        "Albany", "Annapolis", "Atlanta", "Augusta", "Boston", "Charleston",
-        "Columbia", "Columbus", "Concord", "Dover", "Frankfort", "Harrisburg",
-        "Hartford", "Indianapolis", "Lansing", "Montpelier", "Providence",
-        "Raleigh", "Richmond", "Tallahassee", "Trenton", "Washington, D.C.",
-    ],
-    "America/Chicago": [
-        "Austin", "Baton Rouge", "Bismarck", "Des Moines", "Jackson",
-        "Jefferson City", "Lincoln", "Little Rock", "Madison", "Montgomery",
-        "Nashville", "Oklahoma City", "Pierre", "Springfield", "St. Paul",
-        "Topeka",
-    ],
-    "America/Denver": [
-        "Boise", "Cheyenne", "Denver", "Helena", "Salt Lake City", "Santa Fe",
-    ],
-    "America/Phoenix": ["Phoenix"],
-    "America/Los_Angeles": ["Carson City", "Olympia", "Sacramento", "Salem"],
-    "America/Anchorage": ["Juneau"],
-    "Pacific/Honolulu": ["Honolulu"],
-}
-
-# When several zones behave identically, keep the recognizable one.
-_TZ_PREFERRED = [
-    "America/St_Johns", "America/Halifax", "America/Blanc-Sablon",
-    "America/Toronto", "America/Atikokan", "America/Winnipeg",
-    "America/Regina", "America/Edmonton", "America/Vancouver",
-    "America/Whitehorse",
-    "America/Puerto_Rico", "America/New_York", "America/Chicago",
-    "America/Denver", "America/Phoenix", "America/Los_Angeles",
-    "America/Anchorage", "America/Adak", "Pacific/Honolulu",
-    "Pacific/Pago_Pago", "Pacific/Guam",
-]
-
-
-def _zone_lon(coord: str) -> float:
-    """Longitude out of a zone.tab coordinate pair ("+4339-07923").
-    Dateline-crossing zones (Guam, Saipan) map past -180 so they sort
-    west of Alaska on an east→west list."""
-    i = min(j for j in (coord.find("+", 1), coord.find("-", 1)) if j > 0)
-    raw = coord[i:]
-    sign = 1 if raw[0] == "+" else -1
-    deg, rest = int(raw[1:4]), raw[4:]
-    lon = sign * (deg + int(rest[:2] or 0) / 60 + int(rest[2:4] or 0) / 3600)
-    return lon if lon <= 0 else lon - 360
-
-
-def _off_pair(zone: str) -> tuple[float, float]:
-    """(winter, summer) UTC offsets in hours — the zone's whole behavior
-    for date purposes. (-8.0, -7.0) = DST; (-7.0, -7.0) = fixed."""
-    zi = ZoneInfo(zone)
-    y = datetime.now().year
-    jan = datetime(y, 1, 15, tzinfo=zi).utcoffset().total_seconds() / 3600
-    jul = datetime(y, 7, 15, tzinfo=zi).utcoffset().total_seconds() / 3600
-    return (min(jan, jul), max(jan, jul))
-
-
-def _fmt_off(hours: float) -> str:
-    h, m = divmod(abs(hours) * 60, 60)
-    return f"UTC{'-' if hours < 0 else '+'}{int(h)}" + (f":{int(m):02d}" if m else "")
-
-
-def _selectable_timezones() -> list[dict[str, Any]]:
-    """US/CA zones, deduplicated by behavior: zones that keep identical
-    local time year-round (e.g. all nine Indiana/* variants, Montreal ~
-    Toronto) collapse to one entry. Read from the shipped tzdata so
-    newly-created zones appear when the package updates. Ordered
-    Canada-first, then east→west by longitude. Canadian zones display
-    as "Canada/<city>"; the stored value stays canonical America/*."""
-    import tzdata  # bundled zone files; also try the OS copy as fallback
-    candidates = [
-        os.path.join(os.path.dirname(tzdata.__file__), "zoneinfo", "zone.tab"),
-        "/usr/share/zoneinfo/zone.tab",
-    ]
-    entries: dict[str, tuple[str, float]] = {}
-    for tab in candidates:
-        try:
-            for line in open(tab):
-                if line.startswith("#"):
-                    continue
-                p = line.strip().split("\t")
-                if len(p) >= 3 and p[0] in _TZ_COUNTRIES:
-                    entries[p[2]] = (p[0], _zone_lon(p[1]))
-            if entries:
-                break
-        except OSError:
-            continue
-    for zone, lon in _EXTRA_ZONES.items():
-        try:
-            ZoneInfo(zone)
-            entries.setdefault(zone, ("CA", lon))
-        except Exception:
-            pass
-    if not entries:
-        return [{"zone": TZ_NAME, "label": TZ_NAME}]
-
-    # Collapse by (country side, winter/summer offsets) — identical
-    # behavior means the duplicate zones are pure noise in a dropdown.
-    groups: dict[tuple[bool, tuple[float, float]], list[tuple[str, float]]] = {}
-    for zone, (country, lon) in entries.items():
-        key = (country == "CA", _off_pair(zone))
-        groups.setdefault(key, []).append((zone, lon))
-
-    out = []
-    for (is_ca, (winter, summer)), members in groups.items():
-        zone, lon = min(
-            members,
-            key=lambda m: (_TZ_PREFERRED.index(m[0])
-                           if m[0] in _TZ_PREFERRED else 999, m[0]),
-        )
-        display = ("Canada/" + zone.split("/", 1)[1]) \
-            if is_ca and zone.startswith("America/") else zone
-        aliases = sorted(
-            "Canada/" + z.split("/", 1)[1]
-            for z, _ in members
-            if z in _EXTRA_ZONES and z != zone
-        )
-        if aliases:
-            display += " · " + " · ".join(aliases)
-        friendly = _TZ_FRIENDLY.get(zone)
-        if friendly:
-            display = f"{friendly} — {display}"
-        off = _fmt_off(winter) if winter == summer \
-            else f"{_fmt_off(winter)} winter · {_fmt_off(summer)} summer"
-        caps = _TZ_CAPITALS.get(zone)
-        out.append({
-            "zone": zone,
-            "label": f"{display} — {', '.join(caps)} ({off})" if caps
-                     else f"{display} ({off})",
-            "short": f"{display} ({off})",
-            "is_ca": is_ca, "lon": lon,
-        })
-    out.sort(key=lambda r: (not r["is_ca"], -r["lon"], r["zone"]))
-    return out
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
 ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
-CRAWL_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_CRAWL_LIMIT", "50"))
-CRAWL_TIMEOUT_S = float(os.environ.get("CHATBOT_CONCIERGE_CRAWL_TIMEOUT", "900"))
-MAP_LIMIT = int(os.environ.get("CHATBOT_CONCIERGE_MAP_LIMIT", "500"))
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
-_index_graph = None
 _query_graph = None
 _saver: AsyncSqliteSaver = None
 _db: aiosqlite.Connection = None  # corpus store (same file as checkpoints)
@@ -246,15 +68,12 @@ _progress: dict[str, dict[str, Any]] = {}  # run_id -> live in-node progress for
 class ChatbotConciergeState(TypedDict, total=False):
     url: str
     question: str | None
-    crawl_limit: int
-    pages: list[dict[str, Any]]          # [{url, title, markdown}]
-    phone: str | None                    # operator-provided contact number
-    email: str | None                    # operator-provided contact email
-    keep_contacts: bool                  # store keeps existing phone/email
+    pages: list[dict[str, Any]]          # [{url, title}] — snapshot detail for old runs
+    phone: str | None                    # contact number for handoff answers
+    email: str | None                    # contact email for handoff answers
     tz: str | None                       # business-local IANA zone for "today"
     chunks: list[dict[str, Any]]         # [{text, source}]
     embeddings: list[list[float]]
-    screenshot: bytes | None             # homepage PNG captured during crawl
     ranked: list[dict[str, Any]]
     candidate: str | None               # unverified answer draft
     cand_text: str                      # chunk text the candidate drew from
@@ -282,419 +101,6 @@ def fail(state: ChatbotConciergeState, node: str, err: Exception | str) -> Chatb
 
 def bail(state: ChatbotConciergeState) -> bool:
     return state.get("status") == "failed"
-
-
-# ------------------------------------------------------- index-graph nodes
-
-# Corpus hygiene: crawl discovers, then we keep only indexable pages.
-_JUNK_PATH = re.compile(
-    r"^/(wp-(admin|login|json)|login|logout|log-out|sign-?in|sign-?up|"
-    r"register|account[^/]*|dashboard|password[^/]*|forgot[^/]*|reset|"
-    r"admin|edit(-[^/]*)?|submission[^/]*|cart|checkout|search|feed|"
-    r"comments?|category|tags?|author|page/\d+|20\d\d)(/|$)",
-    re.I,
-)
-MAX_PREFIX_PAGES = 30  # detail-series budget per first path segment
-
-
-def _pick_urls(urls: list[str], limit: int) -> tuple[list[str], int]:
-    """Heuristic URL curation: drop junk paths, sort shallow/core paths ahead
-    of deep detail pages (stable — discovery order survives within a depth),
-    then cap each first-segment series."""
-    def depth(u: str) -> int:
-        return len([s for s in urlparse(u).path.split("/") if s])
-
-    cand = [u for u in urls if not _JUNK_PATH.search((urlparse(u).path or "/").lower())]
-    cand.sort(key=depth)
-    kept, budget = [], {}
-    for u in cand:
-        segments = [s for s in urlparse(u).path.strip("/").split("/") if s]
-        if len(segments) > 1:
-            used = budget.get(segments[0], 0)
-            if used >= MAX_PREFIX_PAGES:
-                continue
-            budget[segments[0]] = used + 1
-        kept.append(u)
-    picked = kept[:limit]
-    return picked, len(urls) - len(picked)
-
-
-# Small models can't prune a 300-URL list — they echo it back. So the pick
-# task is shaped small: individual core/section pages by index, big repeated
-# families (/events/*) collapsed to a name + keep-count.
-_PICK_PROMPT = (
-    "You select which pages of a business website to index for a visitor "
-    "concierge chatbot. You are given a numbered list of individual page URLs "
-    "plus FAMILIES — groups of many similar pages (shown by example).\n"
-    "Rules:\n"
-    "- Include every core visitor page: homepage, about, contact, hours, "
-    "location/directions, menu/services, pricing, booking, rooms/"
-    "accommodations, FAQ.\n"
-    "- For each FAMILY choose how many pages to keep (0 to {max_keep}): a few "
-    "representative pages for families visitors ask about (events, tours, "
-    "cabins), 0 for junk, duplicates, or machine-generated series.\n"
-    "- Drop login, account, cart, confirmation, search, tag/author/archive "
-    "pages from the individual list.\n"
-    'Reply ONLY as JSON: {{"pages": [indices], "families": {{"prefix": count}}}}'
-)
-
-FAMILY_MIN = 6          # prefix groups smaller than this list individually
-FAMILY_DEFAULT = 5      # keep-count for families the model didn't mention
-
-
-async def _llm_pick(urls: list[str], limit: int) -> tuple[list[str], set[str]] | None:
-    """Ask the chat model which mapped URLs to scrape: individual pages by
-    index, big URL families by keep-count. Output is validated against the
-    mapped set. Returns (picked, big-family URLs) or None on failure → caller
-    falls back to heuristics."""
-    items, fam_map = [], {}
-    for u in urls:
-        segs = [s for s in urlparse(u).path.strip("/").split("/") if s]
-        (fam_map.setdefault(segs[0].lower(), []) if len(segs) > 1 else items).append(u)
-    fams = {p: v for p, v in fam_map.items() if len(v) >= FAMILY_MIN}
-    for p in sorted(fam_map):
-        if p not in fams:
-            items.extend(fam_map[p])
-
-    listing = "\n".join(f"{i} {u}" for i, u in enumerate(items))
-    if fams:
-        listing += "\n\nFAMILIES (pick a keep-count for each):\n" + "\n".join(
-            f"- /{p}/… — {len(v)} pages, e.g. {v[0]}"
-            + (f", {v[1]}" if len(v) > 1 else "")
-            for p, v in fams.items()
-        )
-    try:
-        res = await http.post(
-            f"{OLLAMA}/v1/chat/completions",
-            json={
-                "model": CHAT_MODEL,
-                "temperature": 0,
-                "messages": [
-                    {"role": "system", "content": _PICK_PROMPT.format(max_keep=MAX_PREFIX_PAGES)},
-                    {"role": "user", "content": listing},
-                ],
-            },
-        )
-        res.raise_for_status()
-        text = res.json()["choices"][0]["message"]["content"]
-        m = re.search(r"[\[{][\s\S]*[\]}]", text)
-        raw = m.group(0) if m else ""
-        try:
-            sel = json.loads(raw)
-        except Exception:
-            # small models sometimes emit // comments inside the JSON
-            sel = json.loads(re.sub(r"//[^\n]*", "", raw))
-        if isinstance(sel, list):
-            sel = {"pages": sel}
-        if not isinstance(sel, dict):
-            return None
-
-        picked, seen = [], set()
-        def take(u: str) -> None:
-            if u not in seen:
-                seen.add(u)
-                picked.append(u)
-
-        for i in sel.get("pages") or []:
-            if isinstance(i, int) and 0 <= i < len(items):
-                take(items[i])
-        counts = sel.get("families") or {}
-        if not isinstance(counts, dict):
-            counts = {}
-        for p, members in fams.items():
-            n = counts.get(p, FAMILY_DEFAULT)
-            if not isinstance(n, int):
-                n = FAMILY_DEFAULT
-            for u in members[: max(0, min(n, MAX_PREFIX_PAGES))]:
-                take(u)
-        if not picked:
-            return None
-        fam_urls = {u for v in fams.values() for u in v}
-        return picked[:limit], fam_urls
-    except Exception:
-        return None
-
-
-def _kept_pages(pages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
-    """Post-scrape safety pass — same junk/prefix rules as _pick_urls, in case
-    a scrape redirected into a dropped family."""
-    kept, budget = [], {}
-    for p in pages:
-        path = (urlparse(p["url"]).path or "/").lower()
-        if _JUNK_PATH.search(path):
-            continue
-        segments = path.strip("/").split("/")
-        if len(segments) > 1:
-            used = budget.get(segments[0], 0)
-            if used >= MAX_PREFIX_PAGES:
-                continue
-            budget[segments[0]] = used + 1
-        kept.append(p)
-    return kept, len(pages) - len(kept)
-
-
-async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
-    """Map the site (cheap URL discovery), curate the URL list, then
-    batch-scrape only the selected pages — scrape budget never goes to junk."""
-    if bail(state):
-        return {}
-    run_id = config["configurable"]["thread_id"]
-    limit = state.get("crawl_limit") or CRAWL_LIMIT
-    t0 = time.time()
-    try:
-        # 1) Map — discover URLs without rendering page bodies.
-        res = await http.post(
-            f"{FIRECRAWL}/v2/map",
-            json={"url": state["url"], "limit": MAP_LIMIT},
-        )
-        res.raise_for_status()
-        body = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
-        seed_host = urlparse(state["url"]).netloc.lower().removeprefix("www.")
-        seed = state["url"].split("#")[0].rstrip("/")
-        urls, seen = [], set()
-
-        def add_url(u: str) -> None:
-            u = (u or "").split("#")[0].rstrip("/")
-            if (u.startswith("http") and u not in seen
-                    and urlparse(u).netloc.lower().removeprefix("www.") == seed_host):
-                seen.add(u)
-                urls.append(u)
-
-        for link in body.get("links") or []:
-            add_url(link.get("url") if isinstance(link, dict) else link)
-
-        # Always merge the seed page's own links too: /v2/map leans on the
-        # sitemap and can miss or bury nav links entirely (no sitemap on
-        # storefront CMSs like BigCommerce; high-volume archives flood the
-        # map ordering on Squarespace). Nav links are the strongest signal.
-        res = await http.post(
-            f"{FIRECRAWL}/v2/scrape",
-            json={
-                "url": state["url"],
-                "formats": ["markdown", "links"],
-                "onlyMainContent": False,
-            },
-        )
-        res.raise_for_status()
-        for u in (res.json().get("data") or {}).get("links") or []:
-            add_url(u)
-
-        # Second hop through a few core "hub" pages — utility pages like
-        # /contact-us/hours-and-holiday-closures get linked from nav
-        # dropdowns on contact/services pages, not the homepage.
-        hubs = [u for u in urls
-                if _HUB_PATH.search(urlparse(u).path or "")
-                and not _JUNK_PATH.search(urlparse(u).path or "")][:8]
-        if hubs:
-            hops = await asyncio.gather(*[
-                http.post(
-                    f"{FIRECRAWL}/v2/scrape",
-                    json={"url": u, "formats": ["links"], "onlyMainContent": False},
-                )
-                for u in hubs
-            ], return_exceptions=True)
-            for r2 in hops:
-                if isinstance(r2, httpx.Response) and r2.status_code == 200:
-                    for u in (r2.json().get("data") or {}).get("links") or []:
-                        add_url(u)
-
-        add_url(seed)
-        if not urls:
-            raise RuntimeError("discovery returned no URLs")
-
-        # 2) Curate at URL level. Obvious junk is filtered by rule; on any
-        # non-trivial site the LLM decides which families are worth keeping
-        # (and how many of each), validated against the mapped set. Its
-        # family keep-counts trim even when the total fits under the scrape
-        # limit — a map that returns everything shouldn't index everything.
-        clean = [u for u in urls
-                 if not _JUNK_PATH.search((urlparse(u).path or "/").lower())]
-        heur, _ = _pick_urls(urls, limit)
-        via = "rules"
-        if len(clean) > 12:
-            res = await _llm_pick(clean, limit)
-            if res:
-                llm, fam_urls = res
-                via = "llm"
-                seen = set(llm)
-                # top up with heuristic picks — except big-family members the
-                # model already budgeted
-                picked = (llm + [u for u in heur
-                                 if u not in seen and u not in fam_urls])[:limit]
-            else:
-                picked = heur
-        else:
-            picked = heur
-        dropped = len(urls) - len(picked)
-        if not picked:
-            raise RuntimeError("map returned only junk URLs (login/archive/CMS)")
-
-        # 3) Batch-scrape the selected URLs — same async job shape as crawl.
-        res = await http.post(
-            f"{FIRECRAWL}/v2/batch/scrape",
-            json={
-                "urls": picked,
-                "formats": ["markdown"],
-                "onlyMainContent": True,
-            },
-        )
-        res.raise_for_status()
-        body = res.json()
-        job_id = body.get("id") or (body.get("data") or {}).get("id")
-        if not body.get("success", True) or not job_id:
-            raise RuntimeError(f"batch scrape submit failed: {str(body)[:200]}")
-
-        deadline = t0 + CRAWL_TIMEOUT_S
-        while True:
-            await asyncio.sleep(3)
-            poll = await http.get(f"{FIRECRAWL}/v2/batch/scrape/{job_id}")
-            poll.raise_for_status()
-            job = poll.json()
-            _progress[run_id] = {
-                "node": "crawl",
-                "done": job.get("completed") or 0,
-                "total": job.get("total") or len(picked),
-            }
-            if job.get("status") == "completed":
-                break
-            if job.get("status") in ("failed", "cancelled") or time.time() > deadline:
-                raise RuntimeError(f"batch scrape job {job_id} {job.get('status') or 'timed out'}")
-
-        # Results paginate at 100 pages — follow `next` until exhausted.
-        data = list(job.get("data") or [])
-        while job.get("next"):
-            nxt = await http.get(
-                f"{FIRECRAWL}/v2/batch/scrape/{job_id}", params={"skip": len(data)}
-            )
-            nxt.raise_for_status()
-            job = nxt.json()
-            data += job.get("data") or []
-
-        pages = []
-        for d in data:
-            md = d.get("markdown") or ""
-            if len(md) < 40:
-                continue
-            meta = d.get("metadata") or {}
-            pages.append({
-                "url": meta.get("sourceURL") or meta.get("url") or state["url"],
-                "title": meta.get("title"),
-                "markdown": md,
-            })
-        if not pages:
-            raise RuntimeError("crawl returned no usable pages")
-        pages, dropped2 = _kept_pages(pages)
-        if not pages:
-            raise RuntimeError("scrape returned no usable pages")
-        return {
-            "pages": pages,
-            "screenshot": await _shot(http, state["url"]),
-            "steps": [step("crawl", "ok", ms=round((time.time() - t0) * 1000),
-                           mapped=len(urls), pages=len(pages), via=via,
-                           dropped=dropped + dropped2, job=job_id)],
-        }
-    except Exception as e:
-        return fail(state, "crawl", e)
-
-
-async def _shot(http: httpx.AsyncClient, url: str) -> bytes | None:
-    """Screenshot the homepage via the screenshotter service — cosmetic, never fatal."""
-    if not SCREENSHOT:
-        return None
-    try:
-        r = await http.post(f"{SCREENSHOT}/screenshot", json={"url": url}, timeout=60)
-        if r.status_code == 200 and r.content[:4] == b"\x89PNG":
-            return r.content
-    except Exception:
-        pass
-    return None
-
-
-_IMAGE_LINE = re.compile(r"^\s*!\[.*\]\(.*?\)\s*\\?\s*$")
-_LINK_LINE = re.compile(r"^\s*\[.*\]\(.*?\)\s*\\?\s*$")
-_BOILERPLATE = re.compile(
-    r"consent management|cookies?|all rights reserved|powered by|newsletter|"
-    r"privacy policy|terms of (service|use)|accept all|skip to (main )?(content|nav)",
-    re.I,
-)
-
-
-def _clean(para: str) -> str:
-    """Drop image-only/link-only lines; returns '' for boilerplate/nav."""
-    lines = [
-        ln
-        for ln in para.splitlines()
-        if not _IMAGE_LINE.match(ln) and not _LINK_LINE.match(ln)
-    ]
-    text = "\n".join(lines).strip()
-    # Short paragraphs stay — "$275 per night +" and "Sundays - Thursdays
-    # only" are exactly the qualifiers that must survive chunking.
-    if not text or _BOILERPLATE.search(text):
-        return ""
-    return text
-
-
-def _chunk(text: str, size: int = 1200, overlap: int = 150) -> list[str]:
-    """Deterministic paragraph-aware chunker with boilerplate stripping."""
-    paras = [c for p in text.split("\n\n") if (c := _clean(p))]
-    chunks, cur = [], ""
-    for p in paras:
-        if len(cur) + len(p) + 2 <= size:
-            cur = f"{cur}\n\n{p}" if cur else p
-        else:
-            if cur:
-                chunks.append(cur)
-            tail = cur[-overlap:] if overlap and cur else ""
-            cur = f"{tail}\n\n{p}" if tail else p
-            while len(cur) > size:
-                chunks.append(cur[:size])
-                cur = cur[size - overlap :]
-    if cur:
-        chunks.append(cur)
-    return chunks
-
-
-async def chunk(state: ChatbotConciergeState) -> ChatbotConciergeState:
-    if bail(state):
-        return {}
-    chunks = [
-        {"text": t, "source": p["url"]}
-        for p in state.get("pages", [])
-        for t in _chunk(p["markdown"])
-    ]
-    if not chunks:
-        return fail(state, "chunk", "no usable content after cleaning")
-    return {
-        "chunks": chunks,
-        "steps": [step("chunk", "ok", count=len(chunks), pages=len(state.get("pages") or []))],
-    }
-
-
-EMBED_BATCH = 40  # chunks per ollama call — also the progress granularity
-
-
-async def embed(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
-    if bail(state):
-        return {}
-    run_id = config["configurable"]["thread_id"]
-    chunks = state["chunks"]
-    t0 = time.time()
-    try:
-        embs = []
-        for i in range(0, len(chunks), EMBED_BATCH):
-            res = await http.post(
-                f"{OLLAMA}/v1/embeddings",
-                json={"model": EMBED_MODEL, "input": [c["text"] for c in chunks[i : i + EMBED_BATCH]]},
-            )
-            res.raise_for_status()
-            embs += [d["embedding"] for d in res.json()["data"]]
-            _progress[run_id] = {"node": "embed", "done": len(embs), "total": len(chunks)}
-        return {
-            "embeddings": embs,
-            "steps": [step("embed", "ok", ms=round((time.time() - t0) * 1000), count=len(embs), model=EMBED_MODEL)],
-        }
-    except Exception as e:
-        return fail(state, "embed", e)
 
 
 def _canon(url: str) -> str:
@@ -760,45 +166,6 @@ def _site_title(state: ChatbotConciergeState) -> str | None:
     return (pages[0] if pages else {}).get("title")
 
 
-async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
-    """Persist the corpus so query runs reuse it — no re-crawl per question."""
-    if bail(state):
-        return {}
-    url = _canon(state["url"])
-    keep = state.get("keep_contacts")
-    await _db.execute(
-        f"""INSERT INTO corpora(url, title, pages, chunks, embeddings, phone, email,
-                              token, screenshot, tz, indexed_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(url) DO UPDATE SET
-             title=excluded.title, pages=excluded.pages, chunks=excluded.chunks,
-             embeddings=excluded.embeddings,
-             phone={"phone" if keep else "excluded.phone"},
-             email={"email" if keep else "excluded.email"},
-             screenshot=excluded.screenshot,
-             tz=COALESCE(excluded.tz, corpora.tz),
-             indexed_at=excluded.indexed_at""",
-        (
-            url,
-            _site_title(state),
-            json.dumps([{k: p[k] for k in ("url", "title")} for p in state.get("pages", [])]),
-            json.dumps(state["chunks"]),
-            json.dumps(state["embeddings"]),
-            state.get("phone"),
-            state.get("email"),
-            await _unused_token(),
-            state.get("screenshot"),
-            state.get("tz"),
-            time.time(),
-        ),
-    )
-    await _db.commit()
-    return {
-        "status": "done",
-        "steps": [step("store", "ok", url=url, chunks=len(state["chunks"]))],
-    }
-
-
 # ------------------------------------------------------- query-graph nodes
 
 async def load(state: ChatbotConciergeState) -> ChatbotConciergeState:
@@ -811,7 +178,7 @@ async def load(state: ChatbotConciergeState) -> ChatbotConciergeState:
     ) as cur:
         row = await cur.fetchone()
     if not row:
-        return fail(state, "load", f"site not indexed — run the Index workflow first: {url}")
+        return fail(state, "load", f"site not indexed — build its corpus with the extractor project: {url}")
     return {
         "chunks": json.loads(row[0]),
         "embeddings": json.loads(row[1]),
@@ -944,11 +311,35 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
         # night" barely resembles "how much does it cost" in embedding
         # space); IDF keeps rare terms (cost, pet) outweighing
         # site-ubiquitous ones (the business's own name).
-        chunks, embs = state["chunks"], state["embeddings"]
+        chunks = state["chunks"]
         q_terms = _terms(q)
         qn = _norm(qv)
+
+        # Fast path: the shared qdrant holds corpus vectors — take its
+        # top-30 hits and re-rank them through the lexical layer below.
+        # Corpora built before qdrant (no points) or an outage fall back
+        # to in-DB cosine over the full chunk list.
+        vec = None
+        try:
+            r = await http.post(
+                f"{QDRANT}/collections/corpora/points/search",
+                json={
+                    "vector": qv, "limit": 30, "with_payload": True,
+                    "filter": {"must": [
+                        {"key": "site", "match": {"value": state["url"]}},
+                    ]},
+                },
+            )
+            if r.status_code == 200 and r.json().get("result"):
+                hits = r.json()["result"]
+                chunks = [{"text": h["payload"]["text"],
+                           "source": h["payload"]["source"]} for h in hits]
+                vec = [h["score"] for h in hits]
+        except Exception:
+            pass
+        if vec is None:
+            vec = [_cos(qv, qn, e, _norm(e)) for e in state["embeddings"]]
         c_terms = [_terms(c["text"]) for c in chunks]
-        norms = [_norm(e) for e in embs]
         n = len(chunks)
         df = {w: sum(w in t for t in c_terms) for w in q_terms}
         idf = {w: math.log(1 + n / (df[w] or 1)) for w in q_terms}
@@ -979,7 +370,7 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
             (
                 {
                     "index": i,
-                    "score": 0.55 * _cos(qv, qn, e, norms[i])
+                    "score": 0.55 * vec[i]
                     + 0.3 * sum(idf[w] for w in q_terms & c_terms[i]) / idf_total
                     + sum(b for hint, b in intents if hint.search(c["text"]))
                     + (CORE_BOOST if core_hit[i] else 0.0)
@@ -989,7 +380,7 @@ async def retrieve(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     "text": c["text"],
                     "source": c["source"],
                 }
-                for i, (c, e) in enumerate(zip(chunks, embs))
+                for i, c in enumerate(chunks)
             ),
             key=lambda r: (-r["score"], r["index"]),
         )
@@ -1109,6 +500,7 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
             json={
                 "model": CHAT_MODEL,
                 "temperature": 0,  # deterministic decode
+                "think": False,   # qwen3 — keep reasoning off the answer path
                 "messages": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     # TODAY pins "tonight/today/tomorrow/this weekend" to a
@@ -1187,6 +579,7 @@ async def verify(state: ChatbotConciergeState) -> ChatbotConciergeState:
             json={
                 "model": CHAT_MODEL,
                 "temperature": 0,
+                "think": False,   # qwen3 — keep reasoning off the verify path
                 "messages": [
                     {"role": "system", "content": VERIFY_PROMPT},
                     {"role": "user", "content": f"QUESTION: {state['question']}\n\nSOURCE:\n{state['cand_text']}\n\nANSWER:\n{cand}"},
@@ -1230,7 +623,7 @@ def _build(nodes: list[tuple[str, Any]], retry: str | None = None) -> Any:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _index_graph, _query_graph, _saver, _db
+    global _query_graph, _saver, _db
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     _saver = AsyncSqliteSaver(await aiosqlite.connect(DB_PATH))
     _db = await aiosqlite.connect(DB_PATH)
@@ -1250,7 +643,7 @@ async def lifespan(app: FastAPI):
     # Older databases: add any columns introduced after first boot.
     async with _db.execute("PRAGMA table_info(corpora)") as cur:
         cols = {r[1] async for r in cur}
-    for col, typ in {"phone": "TEXT", "email": "TEXT", "screenshot": "BLOB",
+    for col, typ in {"phone": "TEXT", "email": "TEXT",
                      "token": "TEXT", "widget": "TEXT", "tz": "TEXT"}.items():
         if col not in cols:
             await _db.execute(f"ALTER TABLE corpora ADD COLUMN {col} {typ}")
@@ -1265,9 +658,6 @@ async def lifespan(app: FastAPI):
     if stale:
         await _db.commit()
 
-    _index_graph = _build(
-        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
-    )
     _query_graph = _build(
         [("load", load), ("retrieve", retrieve), ("answer", answer), ("verify", verify)],
         retry="answer",
@@ -1288,123 +678,10 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-class IndexRequest(BaseModel):
-    url: HttpUrl
-    limit: int | None = None  # overrides CHATBOT_CONCIERGE_CRAWL_LIMIT when set
-    phone: str | None = None  # contact number for handoff answers
-    email: str | None = None  # contact email for handoff answers
-    tz: str | None = None     # business-local zone for "tonight"-class questions
-    keep_contacts: bool = False  # preserve existing phone/email on reindex
-
-
 class QueryRequest(BaseModel):
     url: HttpUrl
     question: str
     token: str | None = None  # widget key — must match the corpus's stored token
-
-
-class ExtractRequest(BaseModel):
-    url: HttpUrl
-
-
-# Pre-sales demo: scrape a site and show the owner which business facts an
-# AI concierge can pull out of it. Firecrawl gathers the pages, Ollama does
-# the structured extraction — deterministic schema, no per-field guessing.
-_EXTRACT_PROMPT = (
-    "You extract business facts from scraped website text. Reply with a "
-    "single JSON object only — no commentary, no markdown fences. Use "
-    "exactly these keys, omitting any the text doesn't cover (never "
-    "invent a value): "
-    '{"business_name": str, "what_they_do": str (one sentence), '
-    '"address": str, "phone": str, "email": str, "hours": [str], '
-    '"locations": [{"name": str, "address": str, "phone": str, '
-    '"hours": [str]}] (only when the business has more than one — each '
-    "location's own address/phone/hours, never merged), "
-    '"amenities": [str], "services_or_menu": [str], "prices": [str], '
-    '"policies": [str], "booking_or_ordering": [str], "social_links": [str], '
-    '"other_facts": [str]}. '
-    "Each list item is one fact, verbatim-short (e.g. \"Mon–Fri 9am–5pm\", "
-    "\"pet fee $75/stay\"). Hours keep their day and time qualifiers."
-)
-
-_EXTRACT_MAX_MD = 6000   # chars of markdown per page fed to the model
-_EXTRACT_MAX_PAGES = 4   # core-path pages scraped beyond the seed
-# Any path segment counts — sites nest utility pages under a location slug
-# ("/abbotsford/menu"), which an anchored core-path check would miss.
-_EXTRACT_PATH = re.compile(
-    r"/(contact|about|hours?|find-?us|visit|locations?|directions|menus?|"
-    r"rates?|pric|book|reserv|stay|rooms?|accommodation|faqs?|info|polic)",
-    re.I,
-)
-
-
-@app.post("/extract")
-async def extract(req: ExtractRequest) -> dict[str, Any]:
-    """Scrape a business site and extract its key facts — pre-sales demo."""
-    t0 = time.time()
-    url = str(req.url)
-    host = urlparse(url).netloc.lower().removeprefix("www.")
-
-    async def scrape(u: str, formats: list[str]) -> dict[str, Any]:
-        r = await http.post(
-            f"{FIRECRAWL}/v2/scrape",
-            json={"url": u, "formats": formats, "onlyMainContent": False},
-        )
-        r.raise_for_status()
-        return r.json().get("data") or {}
-
-    try:
-        seed = await scrape(url, ["markdown", "links"])
-    except Exception as e:
-        raise HTTPException(502, f"scrape failed: {e}")
-
-    # Follow a few core-path links — hours/contact/menu rarely live on the
-    # homepage. Same-host, non-junk only; this is a demo, not a crawl.
-    seen, extra = {url.rstrip("/")}, []
-    for u in seed.get("links") or []:
-        u = (u.get("url") if isinstance(u, dict) else u or "").split("#")[0].rstrip("/")
-        path = (urlparse(u).path or "/").lower()
-        if (len(extra) >= _EXTRACT_MAX_PAGES or u in seen
-                or urlparse(u).netloc.lower().removeprefix("www.") != host
-                or not _EXTRACT_PATH.search(path) or _JUNK_PATH.search(path)):
-            continue
-        seen.add(u)
-        extra.append(u)
-    pages = await asyncio.gather(
-        *[scrape(u, ["markdown"]) for u in extra], return_exceptions=True
-    )
-
-    docs = [seed["markdown"][:_EXTRACT_MAX_MD]]
-    for p in pages:
-        if isinstance(p, dict) and p.get("markdown"):
-            docs.append(p["markdown"][:_EXTRACT_MAX_MD])
-    if not seed.get("markdown"):
-        raise HTTPException(502, "scrape returned no markdown")
-
-    res = await http.post(
-        f"{OLLAMA}/v1/chat/completions",
-        json={
-            "model": CHAT_MODEL,
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": _EXTRACT_PROMPT},
-                {"role": "user", "content": "\n\n---PAGE---\n\n".join(docs)},
-            ],
-        },
-    )
-    res.raise_for_status()
-    raw = res.json()["choices"][0]["message"]["content"].strip()
-    try:
-        facts = json.loads(raw)
-    except json.JSONDecodeError:
-        m = re.search(r"\{.*\}", raw, re.S)
-        facts = json.loads(m.group(0)) if m else {"raw": raw}
-    return {
-        "facts": facts,
-        "pages": [url] + extra,
-        "elapsed_ms": round((time.time() - t0) * 1000),
-    }
 
 
 async def _audit(graph, run_id: str, cfg: dict[str, Any]) -> None:
@@ -1461,37 +738,6 @@ async def index_page() -> FileResponse:
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
 
-@app.get("/timezones")
-async def timezones() -> dict[str, Any]:
-    """US/CA zones for the index-form dropdown — sourced from the shipped
-    tzdata so future zone creations show up on package upgrade. Ordered
-    Canada-first, east→west; labels show "Canada/<city>" for CA zones."""
-    zones = _selectable_timezones()
-    names = {z["zone"] for z in zones}
-    return {"timezones": zones,
-            "default": TZ_NAME if TZ_NAME in names else "America/Vancouver"}
-
-
-@app.post("/index", status_code=202)
-async def start_index(req: IndexRequest) -> dict[str, str]:
-    if req.tz and req.tz not in {z["zone"] for z in _selectable_timezones()}:
-        raise HTTPException(422, f"tz must be a US/Canada zone from /timezones, got {req.tz!r}")
-    run_id = "idx:" + uuid.uuid4().hex
-    _pending.add(run_id)
-    initial: ChatbotConciergeState = {"url": str(req.url)}
-    if req.limit:
-        initial["crawl_limit"] = req.limit
-    if req.phone:
-        initial["phone"] = req.phone.strip() or None
-    if req.email:
-        initial["email"] = req.email.strip() or None
-    if req.tz:
-        initial["tz"] = req.tz
-    initial["keep_contacts"] = req.keep_contacts
-    asyncio.create_task(_run(_index_graph, run_id, initial))
-    return {"run_id": run_id, "status": "running"}
-
-
 @app.post("/query", status_code=202)
 async def start_query(req: QueryRequest) -> dict[str, str]:
     url = _canon(str(req.url))
@@ -1541,13 +787,37 @@ async def widget_config(token: str) -> dict[str, Any]:
     its site URL and saved theming. Token is the lookup key, so nothing else
     needs to be in the tag."""
     async with _db.execute(
-        "SELECT url, widget FROM corpora WHERE token=?", (token.strip().upper(),)
+        "SELECT url, widget, phone, email FROM corpora WHERE token=?",
+        (token.strip().upper(),),
     ) as cur:
         row = await cur.fetchone()
     if not row:
         raise HTTPException(404, "unknown token")
     cfg = json.loads(row[1]) if row[1] else {}
-    return {"url": row[0], **cfg}
+    out = {"url": row[0], **cfg}
+    # Contact details only leave the corpus when the admin opted the widget in.
+    if cfg.get("contact"):
+        if row[2]:
+            out["phone"] = row[2]
+        if row[3]:
+            out["email"] = row[3]
+    return out
+
+
+@app.get("/sites/screenshot")
+async def site_screenshot(token: str) -> Response:
+    """Homepage PNG captured at indexing time — read-only from the corpus."""
+    async with _db.execute(
+        "SELECT screenshot FROM corpora WHERE token=?", (token.strip().upper(),)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "no screenshot for this site")
+    return Response(
+        bytes(row[0]),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 @app.get("/sites")
@@ -1581,23 +851,14 @@ async def delete_site(url: str) -> dict[str, Any]:
     async with _db.execute("DELETE FROM events WHERE url=?", (canon,)) as cur:
         evts = cur.rowcount
     await _db.commit()
+    try:
+        await http.post(
+            f"{QDRANT}/collections/corpora/points/delete",
+            json={"filter": {"must": [{"key": "site", "match": {"value": canon}}]}},
+        )
+    except Exception:
+        pass
     return {"deleted": corpus > 0, "events_deleted": evts}
-
-
-@app.get("/sites/screenshot")
-async def site_screenshot(url: str) -> Response:
-    """Homepage PNG captured during indexing — 404 until the site is (re-)indexed."""
-    async with _db.execute(
-        "SELECT screenshot FROM corpora WHERE url=?", (_canon(url),)
-    ) as cur:
-        row = await cur.fetchone()
-    if not row or not row[0]:
-        raise HTTPException(404, "no screenshot for this site")
-    return Response(
-        bytes(row[0]),
-        media_type="image/png",
-        headers={"Cache-Control": "public, max-age=3600"},
-    )
 
 
 @app.get("/audit")
@@ -1711,10 +972,6 @@ async def audit_pdf(url: str | None = None) -> Response:
     )
 
 
-def _graph_for(run_id: str):
-    return _query_graph if run_id.startswith("qry:") else _index_graph
-
-
 def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
     v = v or {}
     return {
@@ -1740,7 +997,7 @@ def _snapshot(run_id: str, v: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/runs/{run_id:path}")
 async def get_run(run_id: str) -> dict[str, Any]:
-    snap = await _graph_for(run_id).aget_state({"configurable": {"thread_id": run_id}})
+    snap = await _query_graph.aget_state({"configurable": {"thread_id": run_id}})
     if snap is None or not snap.values:
         if run_id in _pending:
             return _snapshot(run_id, {"status": "running", "steps": []})

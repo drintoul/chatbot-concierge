@@ -3,14 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>chatbot-concierge</title>
+<title>chatbot concierge</title>
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   :root {
     color-scheme: dark;
-    --bg: #0a0f0d; --panel: #131a17; --panel2: #1a2420; --line: #2a3833;
-    --txt: #e9f0ec; --dim: #8ba398; --accent: #34d399; --accent2: #2dd4bf;
-    --ok: #5fd68a; --warn: #e3c566; --bad: #f08888;
+    --bg: #0a0f0d; --panel: #131a17; --line: #2a3833;
+    --txt: #e9f0ec; --dim: #8ba398; --accent: #34d399;
   }
   * { box-sizing: border-box; }
   body {
@@ -20,776 +19,101 @@
       radial-gradient(900px 460px at 10% 110%, rgba(52,211,153,.07), transparent),
       var(--bg);
     color: var(--txt); min-height: 100vh;
-    display: flex; justify-content: center; padding: 48px 20px;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
   }
-  main { width: 100%; max-width: 860px; }
-  .brand { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
-  .brand img { width: 46px; height: 46px; }
-  h1 { font-size: 30px; margin: 0; letter-spacing: -.03em; }
-  .sub { color: var(--dim); font-size: 15px; margin-bottom: 30px; }
-
-  /* tabs */
-  .tabs { display: flex; gap: 10px; margin-bottom: 28px; }
-  .tab {
-    padding: 13px 22px; border: 2px solid var(--line); background: var(--panel);
-    color: var(--dim); font: inherit; font-size: 16px; font-weight: 700;
-    cursor: pointer; border-radius: 14px; transition: border-color .15s, color .15s;
-  }
-  .tab .tnum { font-size: 24px; margin-right: 2px; }
-  .tab.active {
-    color: var(--txt); border-color: var(--accent);
-    background: var(--panel2);
-  }
-  .tab:hover:not(.active) { color: var(--txt); border-color: var(--dim); }
-  .tab-chat {
-    border-color: var(--wcc, var(--accent));
-    background: var(--wcc, var(--accent));
-    color: var(--wcc-fg, #06281e);
-  }
-  .tab-chat.active { background: var(--wcc, var(--accent)); color: var(--wcc-fg, #06281e); }
-  .tab-chat:hover:not(.active) { color: var(--wcc-fg, #06281e); border-color: var(--wcc, var(--accent)); }
-  .pane { display: none; }
-  .pane.active { display: block; animation: in .2s ease; }
-  #chat-bg {
+  #site-bg {
     position: fixed; inset: 0; z-index: -1; pointer-events: none;
     background-size: cover; background-position: top center;
-    opacity: .3; filter: saturate(.8) blur(1px);
+    opacity: .25; filter: saturate(.8) blur(1px);
   }
-  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
-
-  form { display: grid; gap: 16px; margin-bottom: 28px; }
-  label { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 700; display: block; margin-bottom: 7px; }
-  input, select {
-    width: 100%; padding: 16px 18px; border-radius: 14px; border: 2px solid var(--line);
-    background: var(--panel); color: var(--txt); font: inherit; font-size: 16px;
+  main { width: 100%; max-width: 420px; text-align: center; }
+  .brand img { width: 52px; height: 52px; margin-bottom: 12px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.03em; }
+  .dim { color: var(--dim); font-size: 15px; }
+  select {
+    margin-top: 18px; width: 100%; padding: 13px 16px; border-radius: 12px;
+    border: 2px solid var(--line); background: var(--panel);
+    color: var(--txt); font: inherit; font-size: 15px; cursor: pointer;
   }
-  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(52,211,153,.16); }
-  .tzpick { position: relative; }
-  .tzbtn {
-    width: 100%; padding: 16px 18px; border-radius: 14px; border: 2px solid var(--line);
-    background: var(--panel); color: var(--txt); font: inherit; font-size: 16px;
-    text-align: left; cursor: pointer; white-space: normal; line-height: 1.4;
+  select:focus { outline: none; border-color: var(--accent); }
+  .disclaimer {
+    margin-top: 28px; padding: 14px 18px; text-align: left;
+    border: 2px solid var(--line); border-radius: 12px;
+    background: var(--panel); font-size: 12.5px; line-height: 1.5;
+    color: var(--dim);
   }
-  .tzbtn::after { content: "▾"; float: right; color: var(--dim); }
-  .tzlist {
-    position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
-    max-height: 320px; overflow-y: auto; background: var(--panel);
-    border: 2px solid var(--line); border-radius: 14px;
-    box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  .disclaimer b {
+    display: block; color: #e3c566; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px;
   }
-  .tzlist .tzo {
-    padding: 10px 14px; font-size: 14px; line-height: 1.35; white-space: normal;
-    cursor: pointer; border-bottom: 1px solid var(--line); color: var(--txt);
-  }
-  .tzlist .tzo:last-child { border-bottom: 0; }
-  .tzlist .tzo:hover { background: rgba(52,211,153,.10); }
-  .tzlist .tzo.sel { color: var(--accent); font-weight: 700; }
-  button.cta {
-    padding: 15px 28px; border: 0; border-radius: 14px; font: inherit;
-    font-size: 16px; font-weight: 800; letter-spacing: .01em;
-    cursor: pointer; justify-self: start; color: #06281e;
-    background: linear-gradient(135deg, var(--accent), var(--accent2));
-    transition: transform .1s, filter .15s;
-  }
-  button.cta:hover:not(:disabled) { filter: brightness(1.08); }
-  button.cta:active:not(:disabled) { transform: scale(.97); }
-  button.cta:disabled { opacity: .45; cursor: default; }
-
-  .hint { color: var(--dim); font-size: 14px; }
-  .steps { display: grid; gap: 10px; }
-  .step {
-    display: flex; align-items: center; gap: 14px; padding: 14px 18px;
-    background: var(--panel); border: 2px solid var(--line); border-radius: 14px;
-    animation: in .25s ease; font-size: 15px;
-  }
-  .node { font-weight: 700; width: 90px; font-family: ui-monospace, monospace; font-size: 14px; }
-  .pill { font-size: 12px; padding: 4px 12px; border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
-  .ok { background: rgba(95,214,138,.15); color: var(--ok); }
-  .skipped { background: rgba(227,197,102,.15); color: var(--warn); }
-  .failed { background: rgba(240,136,136,.15); color: var(--bad); }
-  .detail { color: var(--dim); font-size: 13px; }
-  .status { color: var(--dim); font-size: 14px; margin-bottom: 12px; min-height: 22px; }
-
-  .card {
-    margin-top: 16px; padding: 20px 22px; background: var(--panel2);
-    border: 2px solid var(--line); border-radius: 16px; white-space: pre-wrap;
-    font-size: 15px;
-  }
-  .card h2 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 800; margin: 0 0 10px; }
-  .card.err { border-color: rgba(240,136,136,.45); }
-  .card a { color: var(--accent); word-break: break-all; }
-
-  .site-list { display: grid; gap: 10px; margin-bottom: 24px; }
-  .site {
-    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
-    padding: 14px 18px; font-size: 14px;
-  }
-  .site .u { font-family: ui-monospace, monospace; font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
-  .site-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .site .m { color: var(--dim); font-size: 13px; }
-  .site .tw { cursor: pointer; user-select: none; font-size: 13px; font-weight: 700; color: var(--accent); white-space: nowrap; }
-  .site .del { background: none; border: 2px solid var(--line); color: var(--dim); border-radius: 10px;
-    font: inherit; font-size: 13px; font-weight: 700; padding: 4px 9px; cursor: pointer; }
-  .site .del:hover { color: var(--bad); border-color: var(--bad); }
-  .site .ri { padding: 6px 12px; font-size: 12px; border-radius: 8px; min-width: 74px; }
-  .site-wrap { background: var(--panel); border: 2px solid var(--line); border-radius: 14px; }
-
-  /* crawl tree */
-  .tree { font: 14px/1.8 ui-monospace, monospace; list-style: none; margin: 8px 0 0; padding-left: 0; }
-  .tree ul { list-style: none; margin: 0; padding-left: 22px; border-left: 2px solid var(--line); }
-  .tree li { padding: 2px 0; }
-  .tree .seg { color: var(--txt); font-weight: 600; }
-  .tree .seg.leaf { color: var(--accent); }
-  .tree .ttl { color: var(--dim); font-family: system-ui; font-size: 13px; margin-left: 10px; }
-  .tree-box { margin-top: 16px; padding: 16px 20px; background: var(--panel2); border: 2px solid var(--line); border-radius: 16px; overflow-x: auto; }
-  .tree-box h2 { font-size: 13px; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; font-weight: 800; margin: 0 0 10px; }
-
-  /* chatbot — embedded-widget preview (widget DOM/styles live in /static/widget.js) */
-  #embed-demo {
-    font-family: ui-monospace, monospace; font-size: 13px; color: var(--txt);
-    background: var(--bg); border: 2px solid var(--line); border-radius: 10px;
-    padding: 12px 14px; margin: 0 0 12px; white-space: pre-wrap; word-break: break-all;
-  }
-  #embed-demo .dim { color: var(--dim); }
-  #embed-demo .hl { color: var(--accent); }
-
-
-  /* audit */
-  .evt .eq { font-weight: 700; margin-bottom: 8px; }
-  .evt .em { color: var(--dim); font-size: 13px; margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .evt .ea { font-size: 14px; white-space: pre-wrap; }
-  .evt .esrc { margin-top: 8px; font-size: 13px; }
-  .evt .esrc a { color: var(--accent); word-break: break-all; }
-  #a-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
-  #a-head .grow { flex: 1; }
-  #a-head label { margin-bottom: 7px; }
 </style>
 </head>
 <body>
+<div id="site-bg"></div>
 <main>
-  <div class="brand">
-    <img src="/static/favicon.svg" alt="">
-    <div>
-      <h1>chatbot-concierge</h1>
-      <div class="sub">Deterministic LangGraph concierge — index a site once, then ask it anything.</div>
-    </div>
+  <div class="brand"><img src="/static/favicon.svg" alt=""></div>
+  <h1 id="title">chatbot concierge</h1>
+  <p class="dim" id="msg">Opening the concierge…</p>
+  <select id="pick" hidden></select>
+  <div class="disclaimer">
+    <b>Demo — real businesses, imaginary endorsement</b>
+    Yes, these are real businesses. No, they did not build this chatbot,
+    approve it, or (probably) know it exists — it's a personal demo, not
+    their product. It answers entirely from <em>their</em> public website
+    — so if it's wrong, it's reading the wrong thing, not making things
+    up. Still: websites lie, pages go stale, and reading comprehension
+    is hard — please don't book tables, plan weddings, or file lawsuits
+    based on this. Call the actual humans at the actual business. We
+    accept no liability. All site content belongs to its owners and
+    disappears on request.
   </div>
-
-  <div class="tabs">
-    <button class="tab active" data-t="index"><span class="tnum">1</span> Index site</button>
-    <button class="tab" data-t="query"><span class="tnum">2</span> Query</button>
-    <button class="tab tab-chat" data-t="chat"><span class="tnum">3</span> Chatbot</button>
-    <button class="tab" data-t="audit"><span class="tnum">4</span> Audit</button>
-    <button class="tab" data-t="sites"><span class="tnum">5</span> Sites</button>
-    <button class="tab" data-t="extract"><span class="tnum">6</span> Extract</button>
-  </div>
-
-  <!-- ================= INDEX ================= -->
-  <section class="pane active" id="pane-index">
-    <form id="f-index">
-      <div>
-        <label for="i-url">Site to index (crawls 2 levels deep)</label>
-        <input id="i-url" value="https://www.fraserriverlodge.com/" required>
-      </div>
-      <div>
-        <label for="i-limit">Max pages <span style="text-transform:none">(default 50 — raise it for large sites; it's the scrape budget, junk is filtered first)</span></label>
-        <input id="i-limit" type="number" min="1" max="200" placeholder="50">
-      </div>
-      <div>
-        <label for="i-phone">Contact phone <span style="text-transform:none">(optional — shown when the concierge can't answer)</span></label>
-        <input id="i-phone" type="tel" autocomplete="off">
-      </div>
-      <div>
-        <label for="i-email">Contact email <span style="text-transform:none">(optional — same)</span></label>
-        <input id="i-email" type="email" autocomplete="off">
-      </div>
-      <div>
-        <label for="i-tz">Business timezone <span style="text-transform:none">(for "what time do you close tonight"-class questions)</span></label>
-        <div class="tzpick">
-          <button type="button" class="tzbtn" id="i-tz-btn">…</button>
-          <div class="tzlist" id="i-tz-list" hidden></div>
-          <input type="hidden" id="i-tz">
-        </div>
-      </div>
-      <button class="cta" type="submit">Index site</button>
-      <div class="hint">One-time per site: crawl → chunk → embed → store. Re-run anytime to refresh.</div>
-    </form>
-    <div class="status" id="s-index"></div>
-    <div class="steps" id="steps-index"></div>
-    <div id="out-index"></div>
-  </section>
-
-  <!-- ================= QUERY ================= -->
-  <section class="pane" id="pane-query">
-    <form id="f-query">
-      <div>
-        <label for="q-site">Indexed site</label>
-        <select id="q-site"></select>
-      </div>
-      <div>
-        <label for="q-text">Question</label>
-        <input id="q-text" value="How much does it cost to stay at the Lodge?" required>
-      </div>
-      <button class="cta" type="submit">Ask</button>
-      <div class="hint">Fast path — no re-crawl. load → retrieve → answer (~seconds).</div>
-    </form>
-    <div class="status" id="s-query"></div>
-    <div class="steps" id="steps-query"></div>
-    <div id="out-query"></div>
-  </section>
-
-  <!-- ================= CHATBOT ================= -->
-  <section class="pane" id="pane-chat">
-    <div id="chat-bg"></div>
-    <div class="card" style="margin:0 0 12px;max-width:460px;white-space:normal">
-      <label for="c-site">Chatting as concierge for</label>
-      <select id="c-site"></select>
-      <div class="hint" style="margin-top:10px">Preview of the embeddable widget — the bubble floats bottom-right over the host page. Click it to chat.</div>
-    </div>
-
-    <div class="card" style="margin:0 0 12px;max-width:640px;white-space:normal">
-      <label>Customize</label>
-      <div style="display:flex;gap:16px;align-items:end">
-        <div style="flex-shrink:0">
-          <div class="hint" style="margin-bottom:6px">Accent colour</div>
-          <input type="color" id="cc-colour" value="#34d399" style="width:64px;height:40px;padding:4px;cursor:pointer">
-        </div>
-        <div style="flex:1;min-width:0">
-          <div class="hint" style="margin-bottom:6px">Name (title bar)</div>
-          <input id="cc-name" placeholder="concierge" autocomplete="off" style="min-width:0">
-        </div>
-        <div style="flex:1.4;min-width:0">
-          <div class="hint" style="margin-bottom:6px">Opening question</div>
-          <input id="cc-greeting" placeholder="Hi! How can we help?" autocomplete="off" style="min-width:0">
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
-        <div class="hint" style="flex:1">Updates the preview live and the embed snippet below.</div>
-        <button class="cta" id="cc-save">Save</button><span class="hint" id="cc-saved"></span>
-      </div>
-    </div>
-
-    <div class="card" style="margin:0;max-width:640px;white-space:normal">
-      <label>Embed this widget</label>
-      <div class="hint" style="margin-bottom:12px">Paste it just before the closing <code>&lt;/body&gt;</code> tag of your site — the launcher bubble floats bottom-right over your page:</div>
-      <pre id="embed-demo"></pre>
-      <button class="cta" id="e-copy">Copy instructions</button>
-      <span class="hint" id="e-copied" style="margin-left:12px"></span>
-    </div>
-  </section>
-
-  <!-- ================= AUDIT ================= -->
-  <section class="pane" id="pane-audit">
-    <div id="a-head">
-      <div class="grow">
-        <label for="a-site">Visitor questions for</label>
-        <select id="a-site"></select>
-      </div>
-      <button id="a-pdf" class="cta">Save PDF</button>
-      <button id="a-clear" class="cta" style="background:none;border:2px solid var(--line);color:var(--dim)">Clear log</button>
-    </div>
-    <div id="audit"></div>
-  </section>
-
-  <!-- ================= SITES ================= -->
-  <section class="pane" id="pane-sites">
-    <div id="a-head">
-      <div class="grow">
-        <label>Indexed sites</label>
-        <div class="hint">Corpora available to Query and Chatbot — expand a row for its crawl tree.</div>
-      </div>
-    </div>
-    <div class="site-list" id="sites"></div>
-  </section>
-
-  <!-- ================= EXTRACT ================= -->
-  <section class="pane" id="pane-extract">
-    <form id="f-extract">
-      <div>
-        <label for="x-url">Business website</label>
-        <input id="x-url" type="url" placeholder="https://theirbusiness.com/" required>
-      </div>
-      <button class="cta" type="submit">Extract facts</button>
-      <div class="hint">Scrapes the homepage plus key pages (contact, hours, menu…) and lists the facts
-        an AI concierge would glean — a pre-sales preview for the business owner.</div>
-    </form>
-    <div class="status" id="s-extract"></div>
-    <div id="out-extract" style="display:grid;gap:14px"></div>
-  </section>
 </main>
-
 <script>
-const $ = (id) => document.getElementById(id);
-const panes = { index: "pane-index", query: "pane-query", chat: "pane-chat", audit: "pane-audit", sites: "pane-sites", extract: "pane-extract" };
-document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
-  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
-  Object.values(panes).forEach(p => $(p).classList.toggle("active", p === panes[t.dataset.t]));
-  if (t.dataset.t === "audit") loadAudit();
-  if (t.dataset.t === "sites") loadSites();
-  if (t.dataset.t === "chat") bootWidget();
-  window.ConciergeWidget?.setVisible(t.dataset.t === "chat");
-});
+// Public chat page — ?token=WORD deep-links to a corpus (the key the
+// admin's embed tag carries); with no token the visitor picks a business
+// from the dropdown and its chatbot experience loads.
+const token = new URL(location.href).searchParams.get("token") || "";
+const msg = document.getElementById("msg");
+const pick = document.getElementById("pick");
+let widgetLoaded = false;
 
-// ---------- shared ----------
-const fmt = (d) =>
-  [d.ms != null ? d.ms + "ms" : null, d.pages != null ? d.pages + " pages" : null,
-   d.mapped != null ? "mapped " + d.mapped : null, d.via != null ? "picked by " + d.via : null,
-   d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
-   d.dropped != null ? "dropped " + d.dropped + " junk" : null,
-   d.best != null ? "best " + d.best : null, d.model || null,
-   d.attempt != null ? "attempt " + d.attempt : null,
-   d.grounded != null ? (d.grounded ? "grounded" : "not grounded") : null,
-   d.missing?.length ? "missing: " + d.missing.join(" ") : null,
-   d.reason || d.verdict || null]
-    .filter(Boolean).join(" · ");
-
-// POST + poll a run to completion; onTick fires per poll with the snapshot.
-async function postAndPoll(endpoint, body, onTick) {
-  const res = await fetch(endpoint, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  const { run_id } = await res.json();
-  for (;;) {
-    const st = await (await fetch("/runs/" + encodeURIComponent(run_id))).json();
-    onTick?.(st);
-    if (st.status !== "running") return st;
-    await new Promise(x => setTimeout(x, 900));
-  }
-}
-
-// Renders a live step trace into stepsEl; returns a run() for forms.
-function makeRunner(statusEl, stepsEl, outEl) {
-  return async function run(endpoint, body) {
-    stepsEl.innerHTML = ""; outEl.innerHTML = "";
-    statusEl.textContent = "starting";
-    let rendered = 0;
-    const st = await postAndPoll(endpoint, body, s => {
-      statusEl.textContent = "running — " + (s.progress
-        ? `${s.progress.node}: ${s.progress.done}/${s.progress.total}`
-        : (s.steps?.length || 0) + " node(s) complete");
-      for (; rendered < (s.steps?.length || 0); rendered++) {
-        const s2 = s.steps[rendered], el = document.createElement("div");
-        el.className = "step";
-        el.innerHTML = `<span class="node"></span><span class="pill ${s2.status}"></span><span class="detail"></span>`;
-        el.children[0].textContent = s2.node;
-        el.children[1].textContent = s2.status;
-        el.children[2].textContent = fmt(s2);
-        stepsEl.appendChild(el);
-      }
-    });
-    statusEl.textContent = st.status;
-    return st;
-  };
-}
-
-function answerCard(outEl, st) {
-  const card = document.createElement("div");
-  card.className = "card" + (st.status === "failed" ? " err" : "");
-  card.innerHTML = "<h2></h2><div class='body'></div>";
-  card.querySelector("h2").textContent = st.status === "failed" ? "error" : "answer";
-  card.querySelector(".body").textContent =
-    st.status === "failed" ? st.error || "unknown error" : (st.answer || "(no answer)");
-  outEl.appendChild(card);
-  if (st.sources?.length) {
-    const sc = document.createElement("div");
-    sc.className = "card";
-    sc.innerHTML = "<h2>source</h2>" +
-      st.sources.map(u => `<div><a href="${u}" target="_blank">${u}</a></div>`).join("");
-    outEl.appendChild(sc);
-  }
-}
-
-// ---------- crawl tree ----------
-function buildTree(pages) {
-  const root = { children: {}, title: null, url: null };
-  for (const p of pages || []) {
-    let segs;
-    try { segs = new URL(p.url).pathname.split("/").filter(Boolean); }
-    catch { segs = [p.url]; }
-    let node = root;
-    for (const s of segs) node = node.children[s] ??= { children: {}, title: null, url: null };
-    node.title = p.title; node.url = p.url; node.leaf = true;
-  }
-  return root;
-}
-function treeEl(node, depth = 0) {
-  const ul = document.createElement("ul");
-  ul.className = depth === 0 ? "tree" : "";
-  for (const [seg, child] of Object.entries(node.children).sort(([a],[b]) => a.localeCompare(b))) {
-    const kids = Object.entries(child.children);
-    const li = document.createElement("li");
-    const span = document.createElement("span");
-    span.className = "seg" + (child.leaf && !kids.length ? " leaf" : "");
-    span.textContent = seg + (kids.length ? "/" : "");
-    li.appendChild(span);
-    if (child.title) {
-      const t = document.createElement("span");
-      t.className = "ttl";
-      t.textContent = child.title;
-      li.appendChild(t);
-    }
-    if (kids.length) li.appendChild(treeEl(child, depth + 1));
-    ul.appendChild(li);
-  }
-  return ul;
-}
-function treeBox(pages, host) {
-  if (!pages?.length) return;
-  const box = document.createElement("div");
-  box.className = "tree-box";
-  box.innerHTML = `<h2>crawled — ${pages.length} pages</h2>`;
-  const hostEl = document.createElement("div");
-  hostEl.style.font = "12px ui-monospace, monospace";
-  try { hostEl.textContent = new URL(pages[0].url).hostname + "/"; } catch { hostEl.textContent = "site/"; }
-  hostEl.style.color = "var(--txt)";
-  box.appendChild(hostEl);
-  box.appendChild(treeEl(buildTree(pages)));
-  host.appendChild(box);
-}
-
-// ---------- sites ----------
-let siteList = [];
-const tokenFor = u => (siteList.find(s => s.url === u) || {}).token || "";
-async function loadSites() {
-  const { sites } = await (await fetch("/sites")).json();
-  siteList = sites;
-  sites.sort((a, b) => b.indexed_at - a.indexed_at);        // list: newest first
-  const alpha = [...sites].sort((a, b) => a.url.localeCompare(b.url)); // dropdowns: A-Z
-  const list = $("sites");
-  list.innerHTML = "";
-  if (!sites.length) list.innerHTML = `<div class="hint">Nothing indexed yet.</div>`;
-  for (const s of sites) {
-    const wrap = document.createElement("div");
-    wrap.className = "site-wrap";
-    const row = document.createElement("div");
-    row.className = "site";
-    row.innerHTML = `<div class="site-main"><span class="u">${s.url}</span>` +
-      `<span class="m">${s.pages?.length || "?"} pages · ${s.chunk_count} chunks` +
-      (s.token ? ` · token <code>${s.token}</code>` : "") +
-      (s.tz ? ` · ${s.tz}` : "") + `</span>` +
-      (s.phone || s.email
-        ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
-        : "") +
-      `<span class="m">${new Date(s.indexed_at*1000).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})}</span></div>` +
-      `<div style="display:flex;gap:10px;align-items:center;flex-shrink:0"><button class="cta ri">reindex</button><button class="del" title="Delete corpus">✕</button><span class="tw">tree ▾</span></div>`;
-    const reBtn = row.querySelector(".ri");
-    reBtn.onclick = async (e) => {
-      e.stopPropagation();
-      reBtn.disabled = true;
-      try {
-        const body = { url: s.url, keep_contacts: true };
-        if (s.tz) body.tz = s.tz;
-        // Stored count keeps a big corpus big — but floor it at the default
-        // so a pathologically small index can't trap itself at limit=1.
-        if (s.pages?.length) body.limit = Math.max(50, s.pages.length);
-        const st = await postAndPoll("/index", body, r =>
-          reBtn.textContent = r.progress ? `${r.progress.node} ${r.progress.done}/${r.progress.total}` : "…");
-        reBtn.textContent = st.status === "done" ? "done" : "failed";
-      } catch { reBtn.textContent = "failed"; }
-      loadSites();
-    };
-    const delBtn = row.querySelector(".del");
-    delBtn.onclick = async (e) => {
-      e.stopPropagation();
-      await fetch("/sites?url=" + encodeURIComponent(s.url), { method: "DELETE" });
-      loadSites();
-    };
-    const treeHolder = document.createElement("div");
-    treeHolder.style.display = "none";
-    treeHolder.style.padding = "0 14px 10px";
-    row.querySelector(".tw").onclick = () => {
-      const open = treeHolder.style.display !== "none";
-      treeHolder.style.display = open ? "none" : "block";
-      row.querySelector(".tw").textContent = open ? "tree ▾" : "tree ▴";
-      if (!open && !treeHolder.childNodes.length) treeBox(s.pages || [], treeHolder);
-    };
-    wrap.appendChild(row); wrap.appendChild(treeHolder);
-    list.appendChild(wrap);
-  }
-  for (const sel of ["q-site", "c-site"]) {
-    const el = $(sel), prev = el.value;
-    el.innerHTML = alpha.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
-    if (sites.some(s => s.url === prev)) el.value = prev;
-  }
-  window.ConciergeWidget?.setUrl($("c-site").value);
-  chatBg();
-  syncSnippet();
-  const aSel = $("a-site"), aPrev = aSel.value;
-  aSel.innerHTML = `<option value="">All sites</option>` +
-    alpha.map(s => `<option value="${s.url}">${s.url}</option>`).join("");
-  if (aPrev === "" || sites.some(s => s.url === aPrev)) aSel.value = aPrev;
-}
-loadSites();
-
-// Timezone dropdown — canonical US/CA zones from the backend's tzdata.
-// Custom listbox so the long labels (capitals + offsets) can word-wrap.
-(async () => {
-  const btn = $("i-tz-btn"), list = $("i-tz-list"), hid = $("i-tz");
-  const close = () => { list.hidden = true; };
-  btn.onclick = () => { list.hidden = !list.hidden; };
-  document.addEventListener("click", e => {
-    if (!e.target.closest(".tzpick")) close();
-  });
+async function boot(tk) {
   try {
-    const d = await (await fetch("/timezones")).json();
-    list.innerHTML = d.timezones
-      .map(t => `<div class="tzo" data-z="${t.zone}">${t.label}</div>`).join("");
-    const pick = z => {
-      hid.value = z;
-      const t = d.timezones.find(t => t.zone === z);
-      btn.textContent = t ? t.short : z;
-      list.querySelectorAll(".tzo").forEach(o =>
-        o.classList.toggle("sel", o.dataset.z === z));
-      close();
-    };
-    list.onclick = e => {
-      const o = e.target.closest(".tzo");
-      if (o) pick(o.dataset.z);
-    };
-    pick(d.default);
-  } catch { btn.textContent = "(service default)"; }
-})();
-
-// ---------- workflow 1: index ----------
-$("f-index").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const btn = e.target.querySelector("button"); btn.disabled = true;
-  try {
-    const body = { url: $("i-url").value };
-    const lim = parseInt($("i-limit").value, 10);
-    if (lim > 0) body.limit = lim;
-    const ph = $("i-phone").value.trim();
-    if (ph) body.phone = ph;
-    const em = $("i-email").value.trim();
-    if (em) body.email = em;
-    const tz = $("i-tz").value;
-    if (tz) body.tz = tz;
-    const st = await makeRunner($("s-index"), $("steps-index"), $("out-index"))("/index", body);
-    if (st.status === "done") {
-      const c = document.createElement("div");
-      c.className = "card";
-      c.innerHTML = `<h2>indexed</h2>${st.page_count ?? "?"} pages · ${st.chunk_count} chunks — ready for Query and Chatbot.`;
-      $("out-index").appendChild(c);
-      treeBox(st.pages || [], $("out-index"));
-      loadSites();
-    } else answerCard($("out-index"), st);
-  } catch (err) { $("s-index").textContent = "failed: " + err; }
-  btn.disabled = false;
-});
-
-// ---------- workflow 2: query ----------
-$("f-query").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const btn = e.target.querySelector("button"); btn.disabled = true;
-  try {
-    const st = await makeRunner($("s-query"), $("steps-query"), $("out-query"))("/query",
-      { url: $("q-site").value, question: $("q-text").value,
-        token: tokenFor($("q-site").value) });
-    answerCard($("out-query"), st);
-  } catch (err) { $("s-query").textContent = "failed: " + err; }
-  btn.disabled = false;
-});
-
-// ---------- workflow 3: chatbot — preview runs the real embed script ----------
-let widgetBooted = false;
-function bootWidget() {
-  if (widgetBooted || !$("c-site").value) return;
-  const s = document.createElement("script");
-  const tk = tokenFor($("c-site").value);
-  s.src = "/static/widget.js" + (tk ? "?token=" + encodeURIComponent(tk) : "");
-  s.onload = applyCfg;
-  document.body.appendChild(s);
-  widgetBooted = true;
-}
-// Load the site's saved widget config into the Customize inputs.
-function applyCfg() {
-  const w = (siteList.find(s => s.url === $("c-site").value) || {}).widget || {};
-  $("cc-name").value = w.name || "";
-  $("cc-greeting").value = w.greeting || "";
-  $("cc-colour").value = w.colour || "#34d399";
-  syncTheme();
-  syncSnippet();
-}
-$("c-site").onchange = () => {
-  window.ConciergeWidget?.setUrl($("c-site").value);
-  window.ConciergeWidget?.setToken(tokenFor($("c-site").value));
-  chatBg();
-  applyCfg();
-};
-
-function chatBg() {
-  const u = $("c-site").value;
-  $("chat-bg").style.backgroundImage =
-    u ? `url("/sites/screenshot?url=${encodeURIComponent(u)}")` : "none";
-}
-
-let snippetText = "";
-function syncSnippet() {
-  const u = $("c-site").value;
-  const tk = tokenFor(u);
-  // The token resolves the site's URL and saved widget config server-side —
-  // the tag stays one attribute, and saved changes apply without re-embedding.
-  snippetText = u && tk
-    ? `<script src="${location.origin}/static/widget.js?token=${tk}" async><\/script>`
-    : "";
-  const demo = $("embed-demo");
-  demo.innerHTML = "";
-  for (const [cls, t] of [
-    ["dim", "<body>\n  …\n  <header>My Business</header>\n  <main>Welcome!</main>\n  <footer>© My Business</footer>\n\n"],
-    ["hl", "  " + snippetText + "\n"],
-    ["dim", "</body>\n</html>"],
-  ]) {
-    const s = document.createElement("span");
-    s.className = cls; s.textContent = t;
-    demo.appendChild(s);
+    const r = await fetch("/widget-config?token=" + encodeURIComponent(tk));
+    if (!r.ok) throw new Error("unknown token");
+    const cfg = await r.json();
+    document.title = (cfg.name || "chatbot concierge") + " — chat";
+    document.getElementById("title").textContent = cfg.name || "chatbot concierge";
+    msg.textContent = "Click the bubble — bottom-right — to chat.";
+    document.getElementById("site-bg").style.backgroundImage =
+      'url("/sites/screenshot?token=' + encodeURIComponent(tk) + '")';
+    const s = document.createElement("script");
+    s.src = "/static/widget.js?token=" + encodeURIComponent(tk);
+    document.body.appendChild(s);
+    widgetLoaded = true;
+  } catch {
+    msg.textContent = "This concierge link isn't valid — check the token and try again.";
   }
 }
-function syncTheme() {
-  const c = parseInt($("cc-colour").value.slice(1), 16);
-  const lum = 0.299 * (c >> 16 & 255) + 0.587 * (c >> 8 & 255) + 0.114 * (c & 255);
-  document.documentElement.style.setProperty("--wcc", $("cc-colour").value);
-  document.documentElement.style.setProperty("--wcc-fg", lum > 150 ? "#06281e" : "#ffffff");
-  window.ConciergeWidget?.setTheme({
-    name: $("cc-name").value.trim(),
-    greeting: $("cc-greeting").value.trim(),
-    colour: $("cc-colour").value,
-  });
+
+if (token) {
+  boot(token);
+} else {
+  fetch("/sites").then(r => r.json()).then(({ sites }) => {
+    if (!sites?.length) { msg.textContent = "Nothing indexed yet."; return; }
+    msg.textContent = "Pick a business to chat with:";
+    pick.innerHTML = `<option value="">— choose —</option>` +
+      sites.map(s =>
+        `<option value="${s.token}">${s.title || s.url}</option>`).join("");
+    pick.hidden = false;
+  }).catch(() => { msg.textContent = "concierge unreachable"; });
 }
-for (const id of ["cc-colour", "cc-name", "cc-greeting"]) {
-  $(id).addEventListener("input", () => { syncTheme(); syncSnippet(); });
-}
-$("cc-save").onclick = async () => {
-  const u = $("c-site").value;
-  if (!u) return;
-  const cfg = { url: u, name: $("cc-name").value.trim(),
-    greeting: $("cc-greeting").value.trim(), colour: $("cc-colour").value };
-  await fetch("/widget-config", { method: "POST",
-    headers: { "content-type": "application/json" }, body: JSON.stringify(cfg) });
-  const s = siteList.find(x => x.url === u);
-  if (s) s.widget = { name: cfg.name, greeting: cfg.greeting, colour: cfg.colour };
-  $("cc-saved").textContent = "saved";
-  setTimeout(() => ($("cc-saved").textContent = ""), 2000);
+
+pick.onchange = () => {
+  if (!pick.value) return;
+  if (widgetLoaded) { location.href = "/?token=" + encodeURIComponent(pick.value); return; }
+  boot(pick.value);
 };
-$("e-copy").onclick = async () => {
-  const tk = tokenFor($("c-site").value);
-  const text =
-`Add the Concierge Chatbot to Your Website
-Give your website visitors an AI-powered assistant in three simple steps.
-
-1. Open your website settings
-Find the option to add custom code. Most website builders, including WordPress, Squarespace, Wix, and Shopify, support this feature.
-
-2. Copy and paste this code
-Copy the entire line exactly as shown. Add it just before the closing </body> tag, or use your website builder's site-wide custom code settings.
-
-<script src="${location.origin}/static/widget.js?token=${tk}" async><\/script>
-
-3. Save and publish
-Your chatbot will appear as a chat bubble in the bottom-right corner of your website. Open your published site to confirm the bubble appears.
-Visitors can click the bubble to ask questions about your business using information indexed from your website.
-
-Already configured for you
-Your installation code automatically loads your saved chatbot settings:
-- Business name
-- Welcome greeting
-- Accent colour
-- Indexed website content
-You don't need to modify the code or configure anything else.`;
-  await navigator.clipboard.writeText(text);
-  $("e-copied").textContent = "copied!";
-  setTimeout(() => ($("e-copied").textContent = ""), 2000);
-};
-
-// ---------- workflow 4: audit ----------
-async function loadAudit() {
-  const el = $("audit");
-  el.innerHTML = `<div class="hint">Loading…</div>`;
-  const u = $("a-site").value;
-  const { events } = await (await fetch("/audit" + (u ? "?url=" + encodeURIComponent(u) : ""))).json();
-  el.innerHTML = events.length ? "" : `<div class="hint">No questions logged yet.</div>`;
-  for (const e of events) {
-    const d = document.createElement("div");
-    d.className = "card evt";
-    const host = (() => { try { return new URL(e.url).hostname } catch { return e.url } })();
-    const tag = e.error ? `<span class="pill failed">error</span>`
-      : e.grounded === 1 ? `<span class="pill ok">grounded</span>`
-      : `<span class="pill skipped">handoff</span>`;
-    const lat = e.latency_ms != null ? (e.latency_ms / 1000).toFixed(1) + "s" : "?";
-    d.innerHTML =
-      `<div class="eq"></div>` +
-      `<div class="em">${tag} <span>${host}</span> · <span>${lat}</span> · <span>${new Date(e.ts * 1000).toLocaleString()}</span></div>` +
-      `<div class="ea"></div>`;
-    d.querySelector(".eq").textContent = e.question;
-    d.querySelector(".ea").textContent = e.error ? "error: " + e.error : (e.answer || "(no answer)");
-    for (const u of e.sources || []) {
-      const s = document.createElement("div");
-      s.className = "esrc";
-      s.innerHTML = `source: <a href="${u}" target="_blank">${u}</a>`;
-      d.appendChild(s);
-    }
-    el.appendChild(d);
-  }
-}
-$("a-site").onchange = loadAudit;
-$("a-clear").onclick = async () => {
-  const u = $("a-site").value;
-  await fetch("/audit" + (u ? "?url=" + encodeURIComponent(u) : ""), { method: "DELETE" });
-  loadAudit();
-};
-$("a-pdf").onclick = () => {
-  const u = $("a-site").value;
-  window.location.href = "/audit/pdf" + (u ? "?url=" + encodeURIComponent(u) : "");
-};
-
-// ---------- extract (pre-sales fact sheet) ----------
-const XLBL = {
-  business_name: "Business", what_they_do: "What they do", address: "Address",
-  phone: "Phone", email: "Email", hours: "Hours", locations: "Locations",
-  amenities: "Amenities",
-  services_or_menu: "Services / menu", prices: "Prices", policies: "Policies",
-  booking_or_ordering: "Booking & ordering", social_links: "Social links",
-  other_facts: "Other facts",
-};
-$("f-extract").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const btn = e.target.querySelector("button"); btn.disabled = true;
-  const st = $("s-extract"), out = $("out-extract");
-  st.textContent = "scraping + extracting — this takes a minute…"; out.innerHTML = "";
-  try {
-    const r = await fetch("/extract", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: $("x-url").value }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || r.status);
-    st.textContent = "";
-    const meta = document.createElement("div");
-    meta.className = "hint";
-    meta.textContent = `${d.pages.length} page(s) read · ${(d.elapsed_ms / 1000).toFixed(1)}s — ${d.pages.join(", ")}`;
-    out.appendChild(meta);
-    for (const [key, lbl] of Object.entries(XLBL)) {
-      const v = d.facts[key];
-      if (v == null || v === "" || (Array.isArray(v) && !v.length)) continue;
-      const card = document.createElement("div");
-      card.className = "card";
-      const items = Array.isArray(v) ? v : [v];
-      card.innerHTML = `<h2>${lbl}</h2><ul style="margin:0;padding-left:18px">` +
-        items.map(i => `<li style="margin:3px 0">${
-          typeof i === "object" && i !== null
-            ? Object.entries(i)
-                .map(([k, v]) => `<b>${k}</b>: ${Array.isArray(v) ? v.join("; ") : v}`)
-                .join("<br>")
-            : i
-        }</li>`).join("") + `</ul>`;
-      out.appendChild(card);
-    }
-    if (!out.querySelector(".card")) {
-      out.innerHTML += `<div class="card"><h2>nothing extracted</h2><p class="hint">The scrape succeeded but no recognizable facts came out of it.</p></div>`;
-    }
-  } catch (err) { st.textContent = "failed: " + err.message; }
-  btn.disabled = false;
-});
 </script>
 </body>
 </html>

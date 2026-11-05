@@ -1,81 +1,129 @@
 # concierge
 
-Self-contained dev/demo stack in one `docker compose up`: **Ollama** (local
-LLM + embeddings), **Firecrawl** (self-hosted web-scraping API, wired to use
-the project's Ollama for its LLM features), and a **LangGraph chatbot concierge** — a
-deterministic, checkpointed state machine that pipelines scrape → chunk →
-embed → retrieve → answer over those two services. Firecrawl brings its own
-internal Playwright render backend, so JavaScript-heavy pages work with no
-extra setup.
+Two deployables in one repo, sharing one corpus DB:
 
-Everything runs from published images — no host installs of ollama, node,
-playwright, or firecrawl are used. To move to a VPS, copy this repo, set
-`.env`, and run the same command. All state lives in named volumes.
+- **`chatbot-concierge`** (public, :8000) — a deterministic, checkpointed
+  LangGraph service that pipelines load → retrieve → answer → verify over a
+  persistent per-site vector store. It serves the embeddable widget
+  (`static/widget.js` — launcher bubble + popup in a shadow root, immune to
+  host-page CSS) and a public chat page where visitors pick an indexed
+  business from a dropdown (or deep-link `/?token=WORD`). **Query-only** —
+  it can never crawl, pick, or re-index, so the deployed knowledge store
+  can't be modified by visitors.
+- **`extractor`** (admin — `admin` compose profile, :8001, branded
+  "concierge admin", never public) — the admin UI + corpus builder: map a
+  site via firecrawl + playwright, auto-pick the useful pages, screenshot
+  the homepage, chunk → embed → store. Also where the admin reads the
+  business's facts, edits the corpus, styles the widget, and copies the
+  embed tag.
+
+Both talk to shared infrastructure on the `llm-network` docker network:
+`ollama` for chat + embeddings and `firecrawl` (+ `firecrawl-playwright`)
+for extraction — this project runs none of them itself.
+
+The corpus is the handoff between them: extractor writes the `corpora`
+table (SQLite `langgraph.db` in the `./data` bind mount); concierge reads
+it. Build corpora where the admin stack runs, deploy the concierge where
+visitors are.
 
 ## Screenshots
 
-![Index tab](docs/index-tab.png)
+![concierge admin — Setup Site](docs/admin-setup-site.png)
 
-*① Index site — one-time map → curate → scrape → chunk → embed → store per
-site, with optional contact info used in handoff replies and a per-run page
-limit.*
+*concierge admin (:8001) — six tabs: index a site, read its facts, manage
+indexed corpora, edit pages, style the widget, review asked & answered.*
 
-![Chatbot tab](docs/chatbot-tab.png)
+![chatbot concierge — public page](docs/chat-concierge-page.png)
 
-*③ Chatbot — preview of the embeddable widget: a launcher bubble floats
-bottom-right over the host page and opens the concierge popup.*
+*chatbot concierge (:8000) — visitors pick an indexed business and chat
+with its widget.*
 
-![Audit tab](docs/audit-tab.png)
+## concierge admin (:8001) — the tabs
 
-*④ Audit — every visitor question logged with its outcome (grounded /
-handoff / error), latency, answer, and sources; filterable per site and
-exportable to PDF (`audit-{domain}-{YYYY-MM}.pdf` via `GET /audit/pdf`).*
+1. **Setup Site** — URL + options (page limit, contact phone/email, tz)
+   → one-time index run with a live step trace (map → scrape → chunk →
+   embed → store).
+2. **Business Facts** — pick an indexed site → `GET /business-facts`
+   extracts what the concierge knows straight from the stored corpus
+   (no rescrape; same text the chatbot answers from).
+3. **Sites Indexed** — corpus list: page/chunk counts, token, crawl tree,
+   reindex, delete.
+4. **Edit Corpus** — pick a corpus → its crawled pages listed as links;
+   `✕` drops a page and its chunks (`DELETE /sites/page`), keeping
+   embeddings aligned.
+5. **Chatbot Setup** — per-site widget styling (accent colour, name,
+   greeting, "show contact info in header" toggle) and the embed tag to
+   paste on the client's site: `<script src="PUBLIC_CHATBOT_URL
+   /static/widget.js?token=WORD" async></script>`. The public concierge
+   URL is deployment config (`PUBLIC_CHATBOT_URL`), not admin input.
+6. **Asked & Answered** — every visitor question with its outcome
+   (grounded / handoff / error), latency, answer, sources; filterable per
+   site, exportable to PDF (`GET /audit/pdf`).
+
+Tabs 2-6 stay disabled until a corpus exists.
+
+## Public chat page (:8000)
+
+Dropdown of indexed businesses → selecting one loads that site's widget
+(bubble bottom-right) over a faded homepage screenshot
+(`GET /sites/screenshot?token=`). `?token=` deep-links still work. A
+demo disclaimer sits on the page — edit it in
+`apps/chatbot-concierge/static/index.html`.
 
 ## Quick start
 
 ```bash
 cp .env.example .env        # required — compose has no built-in fallbacks
-docker compose up -d
+docker compose up -d                          # public side only
+docker compose --profile admin up -d          # everything incl. admin stack
 ```
 
-First boot pulls images (~4 GB) and then the ollama models
-(~5 GB: `llama3.1:8b` + `nomic-embed-text`). Watch progress with
-`docker compose logs -f ollama-pull`.
+**Prereq:** the `llm-network` docker network must exist with shared
+`ollama` and `firecrawl` (+ `firecrawl-playwright`) containers already
+running — extractor reaches them over the network gateway, this project
+runs none of them itself. The models named in `.env` must already be
+pulled on that ollama:
+
+```bash
+docker network create llm-network   # once, if it doesn't exist yet
+docker exec ollama ollama pull qwen3:14b
+docker exec ollama ollama pull nomic-embed-text
+```
 
 ## Endpoints
 
 | Service   | Local URL                   | Notes                          |
 | --------- | --------------------------- | ------------------------------ |
-| Ollama    | `http://localhost:11435`    | OpenAI-compat at `/v1`         |
-| Firecrawl | `http://localhost:3002`     | `POST /v2/scrape`, `/v2/map`, `/v2/batch/scrape` |
-| Chatbot concierge | `http://localhost:8000`     | Demo UI at `/`, API at `/docs` |
+| Ollama (shared) | `http://localhost:11434` | container `ollama` on `llm-network`; OpenAI-compat at `/v1` |
+| Firecrawl (shared) | `http://localhost:3002` | container `firecrawl` on `llm-network` — extractor calls `http://firecrawl:3002` |
+| Chatbot concierge | `http://localhost:8000`  | public chat page at `/`, API at `/docs` |
+| Concierge admin | `http://localhost:8001`  | admin UI at `/` — `admin` profile only, never public |
 
-> **Port note:** a host-installed Ollama typically owns `localhost:11434`.
-> This project's container publishes on **11435** so the two never conflict.
-> Inside the compose network, services always reach it at
-> `http://ollama:11434` regardless of the published port. If you deploy to a
-> VPS with no host ollama, set `OLLAMA_PORT=11434` in `.env`.
+> **Network note:** both services reach Ollama and Firecrawl inside docker
+> as `http://ollama:11434` / `http://firecrawl:3002` on `llm-network`.
+> Whatever publishes those APIs on the host is the shared stack's business
+> — this project doesn't publish them.
 
 ## Smoke tests
 
 ```bash
-# Ollama is serving + models are pulled
-curl http://localhost:11435/api/tags
+# Shared ollama is serving + the required models are pulled
+curl http://localhost:11434/api/tags
 
-# Firecrawl scrape → markdown
-curl -s -X POST http://localhost:3002/v2/scrape \
-  -H "content-type: application/json" \
-  -d '{"url":"https://example.com","formats":["markdown"]}'
-
-# Chatbot concierge: index a site once (slow, ~1 min), then query it fast forever
-curl -s -X POST http://localhost:8000/index \
+# Admin: index a site once (~1-2 min) — map → scrape → chunk → embed → store
+curl -s -X POST http://localhost:8001/index \
   -H "content-type: application/json" \
   -d '{"url":"https://example.com"}'
-curl -s http://localhost:8000/sites
+curl -s http://localhost:8001/sites
 
+# Admin: what the corpus knows (no rescrape)
+curl -s "http://localhost:8001/business-facts?url=https://example.com/"
+
+# Concierge: ask the corpus — needs the site's widget token (shown by
+# /sites, also embedded in the widget tag); unindexed sites fail cleanly
 curl -s -X POST http://localhost:8000/query \
   -H "content-type: application/json" \
-  -d '{"url":"https://example.com/","question":"What is this domain used for?"}'
+  -d '{"url":"https://example.com/","question":"What is this domain used for?","token":"WORD"}'
 curl -s http://localhost:8000/runs/<run_id>
 
 # Full containerized test suite (no host tooling needed)
@@ -85,81 +133,86 @@ docker compose --profile test run --rm e2e
 ## Architecture
 
 ```
-┌─────────────┐
-│ ollama      │ ◄────── http://ollama:11434 (+ OpenAI-compat /v1)
-│ llama3.1:8b │
-│ nomic-embed │
-└──────┬──────┘
-       │ OLLAMA_BASE_URL (firecrawl's LLM features point here)
-┌──────┴───────────┐
-│ firecrawl-api    │ :3002 — REST API (harness runs api+workers)
-│  ├─ firecrawl-   │      page-render microservice (its own playwright
-│  │  playwright   │      browsers; handles JS-heavy pages)
-│  ├─ firecrawl-   │      redis — BullMQ/rate limiting
-│  │  redis        │
-│  ├─ firecrawl-   │      rabbitmq — Nuq job queue
-│  │  rabbitmq     │
-│  └─ firecrawl-   │      nuq postgres — job/crawl state
-│     postgres     │
-└────────┬─────────┘
-         │ FIRECRAWL_URL
-┌────────┴─────────┐
-│ chatbot-concierge│ :8000 — two checkpointed LangGraph workflows:
-│ index: map →     │      index (map→scrape→chunk→embed→store) builds a
-│ chunk → embed →  │      persistent corpus per site; query
-│ store            │      (load→retrieve→answer) reuses it — no
-│ query: load →    │      re-crawl per question. Demo UI at /.
-│ retrieve → answer│      Tune via CHATBOT_CONCIERGE_CRAWL_LIMIT /
-└──────────────────┘      _MAP_LIMIT / _TIMEOUT env vars.
+            llm-network  (shared docker network)
+┌─────────────┐  ┌─────────────┐
+│ ollama      │  │ firecrawl   │ ◄── shared containers, owned by
+│ (shared)    │  │ + playwright│     another stack — not run here
+└──┬──────────┘  └──────┬──────┘
+   │ http://ollama      │ http://firecrawl:3002
+   │ :11434             │
+┌──┴───────────────────┐  │
+│ extractor  :8001     │◄─┤  ┌────────────────────┐
+│ "concierge admin"    │  │  │ chatbot-concierge  │ :8000 — query workflow
+│ index: map→scrape→   │  └──│ :8000              │   (load→retrieve→answer
+│ scrape→chunk→embed→  │     │ query: load→       │   →verify loop) over the
+│ store                │     │  retrieve→answer→  │   stored corpus — no
+│ └─ screenshotter     │     │  verify (loop)     │   re-crawl per question.
+│    (homepage PNGs)   │     │ + widget.js, chat  │   Serves widget.js,
+└──────────┬───────────┘     │   page, screenshots│   the public chat page,
+           │ writes `corpora`└──────────┬─────────┘   audit log + PDF.
+           ▼                            │ reads `corpora`
+  ./data (bind mount) ◄───────────────┘
+  the extractor → concierge handoff
 ```
 
-There is no standalone Playwright service — `firecrawl-playwright` is
-Firecrawl's internal render backend, required for JS-rendered scraping and
-not published to the host. If you later need to drive a browser from your
-own code, add a `launch-server` service to this compose file (that pattern
-was used here previously; see git history).
+## Knowledge base: who writes the corpus
 
-## Usage snippets
+The `corpora` table in `./data/langgraph.db` (SQLite, bind mount) is
+the contract. **Extractor** writes one row per site through its index
+workflow; **concierge** only reads it — plus the `widget` column, which the
+admin sets from the admin UI and the concierge serves to the widget:
 
-Ollama chat (OpenAI-compatible):
+| Column        | Contents                                              |
+| ------------- | ----------------------------------------------------- |
+| `url`         | corpus key — canonicalized to a trailing-slash origin |
+| `title`       | site title                                            |
+| `pages`       | JSON `[{url, title}]` — drives the Edit Corpus list   |
+| `chunks`      | JSON `[{text, source}]`                               |
+| `embeddings`  | JSON `[[float, …]]` — positional with `chunks`, `nomic-embed-text` |
+| `phone`/`email` | optional contact details — header opt-in + handoff replies |
+| `token`       | widget key — `/query` rejects mismatched tokens       |
+| `screenshot`  | homepage PNG captured during indexing                 |
+| `tz`          | business-local IANA zone for "tonight"-class questions |
+| `widget`      | JSON theming `{name, greeting, colour, contact}`      |
+| `indexed_at`  | unix timestamp                                        |
 
-```bash
-curl http://localhost:11435/v1/chat/completions -d '{
-  "model":"llama3.1:8b",
-  "messages":[{"role":"user","content":"hello"}]}'
-```
-
-Firecrawl scrape:
-
-```bash
-curl -X POST http://localhost:3002/v2/scrape \
-  -H "content-type: application/json" \
-  -d '{"url":"https://example.com","formats":["markdown"]}'
-```
+`widget.contact` is an opt-in flag: when set, `/widget-config` also
+returns the corpus's phone/email and the widget shows them in its header.
 
 ## Environment
 
-See `.env.example` — model names, published ports, firecrawl concurrency.
-GPU: the `ollama` service has a commented `deploy` block for NVIDIA
-reservations (needs `nvidia-container-toolkit` on the host).
+See `.env.example` — model names, published ports, `PUBLIC_CHATBOT_URL`
+(the concierge's public URL baked into embed tags; dev default
+`http://localhost:8000`). Ollama and Firecrawl live outside this project
+(shared containers on `llm-network`); their config, GPU/device setup, and
+auth belong to whichever stack owns them.
 
 ## Production / VPS notes
 
 - All published ports bind to `127.0.0.1` — put a reverse proxy in front
   and keep it that way, or firewall the ports.
-- `USE_DB_AUTHENTICATION=false` means **Firecrawl has no API key** — fine on
-  the compose bridge/localhost, not acceptable exposed to the internet.
-- The chatbot-concierge API has no auth either — same rule. Don't publish `:8000`
-  without a proxy layer.
-- Set a real `FC_POSTGRES_PASSWORD` before deploying.
-- Backup: `docker run --rm -v concierge_ollama-models:/v alpine tar cf - /v`
-  (same pattern for `fc-pg-data`, `fc-redis-data`, `chatbot-concierge-data`).
+- The concierge API has no auth — the widget is meant to be reachable
+  cross-origin; gate the admin surface (`/sites`, `/audit`, `/runs`) at the
+  proxy instead.
+- **Never run `--profile admin` in production.** The admin UI is
+  build-time tooling; deploy the concierge alone and ship the corpus data
+  to it — and set `PUBLIC_CHATBOT_URL` to the real public origin.
+- `llm-network` with reachable `ollama` + `firecrawl` containers is a hard
+  dependency — create the network and run/point at them before `up`.
+- Backup: `tar cf - data/` — it's a plain directory on the host.
 
 ## Limits
 
-- `ollama-pull` re-checks models on every `up` (idempotent; seconds when
-  already pulled). Change models in `.env`.
-- Firecrawl self-host lacks the cloud "fire-engine" — no managed
-  anti-bot/proxy layer. Respect target sites' terms.
-- Image tags `latest` are used for ollama/firecrawl for dev convenience;
-  pin digests for a reproducible VPS deployment.
+- The models named in `.env` must exist on the shared `ollama` container —
+  this stack doesn't pull them. Change models in `.env` and pull them
+  there (`qwen3:14b` chat + `nomic-embed-text` embeddings by default).
+- The shared ollama's default context is ~4k tokens — extraction calls
+  cap their input accordingly. Bigger `num_ctx` on that container lets
+  `/business-facts` read more of a corpus at once.
+- qwen3 thinking is disabled via `think: false` on chat calls — keeps
+  reasoning out of `content` and off the latency path.
+- Embeddings must match between the two services — if you change
+  `OLLAMA_EMBED_MODEL`, rebuild the affected corpora.
+- SQLite is a single-writer store: the shared volume copes because
+  extractor's writes are rare and admin-driven — don't point many concierge
+  replicas at one file.

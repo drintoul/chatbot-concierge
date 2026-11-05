@@ -1,194 +1,37 @@
 name: concierge
 
-# Self-contained dev/demo stack: Ollama (LLM+embeddings) and the full
-# self-hosted Firecrawl pipeline (which brings its own render backend).
-# Nothing on the host is required except Docker — no local ollama, node, or
-# playwright installs are touched. Move to a VPS by copying this file plus
-# .env; all state lives in named volumes.
-
-# Shared environment for the firecrawl services (mirrors upstream
-# docker-compose.yaml contract, image-only variant).
-x-fc-env: &fc-env
-  REDIS_URL: redis://firecrawl-redis:6379
-  REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
-  PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
-  # NB: user/db must stay "postgres" — nuq-postgres's init SQL (pg_cron) is
-  # bound to that database and fails under a custom POSTGRES_DB.
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD}
-  POSTGRES_DB: postgres
-  POSTGRES_HOST: firecrawl-postgres
-  POSTGRES_PORT: "5432"
-  # No API key on the trusted local bridge network. Set USE_DB_AUTHENTICATION
-  # plus real credentials before exposing this beyond localhost.
-  USE_DB_AUTHENTICATION: "false"
-  NUM_WORKERS_PER_QUEUE: ${FC_NUM_WORKERS}
-  CRAWL_CONCURRENT_REQUESTS: ${FC_CONCURRENT_REQUESTS}
-  MAX_CONCURRENT_JOBS: ${FC_MAX_JOBS}
-  BROWSER_POOL_SIZE: ${FC_BROWSER_POOL}
-  # Point Firecrawl's LLM features (extract, etc.) at the project's Ollama.
-  OLLAMA_BASE_URL: http://ollama:11434
-  MODEL_NAME: ${OLLAMA_CHAT_MODEL}
-  MODEL_EMBEDDING_NAME: ${OLLAMA_EMBED_MODEL}
-  LOGGING_LEVEL: ${FC_LOG_LEVEL}
-  ENV: local
+# Two deployables over the shared `llm-network` docker network (which
+# provides the `ollama` container — this project runs no models of its own):
+#
+#   chatbot-concierge  public side — LangGraph query workflow + embeddable
+#                      widget + chat page + audit log. Query-only: it never
+#                      crawls or re-indexes, so the deployed corpus can't be
+#                      modified by visitors.
+#   extractor          admin side (profile `admin`, NOT public) — admin UI
+#                      to crawl a site into a corpus, screenshot the
+#                      homepage, extract facts, style the widget, and grab
+#                      the embed tag. Brings the whole firecrawl pipeline.
+#
+# The corpus is the handoff: extractor writes the `corpora` table (SQLite,
+# langgraph.db in the ./data bind mount); concierge reads it.
+#
+#   docker compose up -d                    # public side only
+#   docker compose --profile admin up -d    # everything incl. admin stack
+#
+# Prereqs: `llm-network` must exist with a running `ollama` container AND
+# the shared `firecrawl` (+`firecrawl-playwright`) containers — this project
+# runs none of them itself; extractor reaches them over the network gateway
+# (http://firecrawl:3002). Models named in .env must already be pulled:
+#   docker exec ollama ollama pull llama3.1:8b
+#   docker exec ollama ollama pull nomic-embed-text
 
 services:
-  # ------------------------------------------------------------------ ollama
-  ollama:
-    container_name: concierge-ollama
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-models:/root/.ollama
-    ports:
-      # Host's own ollama usually squats on 11434 — publish on 11435 instead.
-      - "127.0.0.1:${OLLAMA_PORT}:11434"
-    healthcheck:
-      test: ["CMD", "ollama", "ps"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-    restart: unless-stopped
-    # GPU 0 = the 3090 (24 GB). The 2070 SUPER (8 GB) handles desktop + other
-    # projects' loads; swap device_ids to ["1"] or count: all to change.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
-
-  # One-shot: pulls the configured models on first boot, then exits.
-  # `ollama pull` is idempotent — re-running `up` is a fast no-op afterwards.
-  ollama-pull:
-    container_name: concierge-ollama-pull
-    image: ollama/ollama:latest
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
-      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
-    entrypoint: ["sh", "-c"]
-    command:
-      - 'ollama pull "$$OLLAMA_CHAT_MODEL" && ollama pull "$$OLLAMA_EMBED_MODEL"'
-    restart: "no"
-
-  # ------------------------------------------------------------- firecrawl
-  firecrawl-api:
-    container_name: concierge-firecrawl-api
-    image: ghcr.io/firecrawl/firecrawl:latest
-    environment:
-      <<: *fc-env
-      HOST: "0.0.0.0"
-      PORT: "3002"
-      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
-      HARNESS_STARTUP_TIMEOUT_MS: "120000"
-    command: node dist/src/harness.js --start-docker
-    depends_on:
-      firecrawl-redis:
-        condition: service_healthy
-      firecrawl-rabbitmq:
-        condition: service_healthy
-      firecrawl-postgres:
-        condition: service_healthy
-      firecrawl-playwright:
-        condition: service_started
-      ollama:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${FIRECRAWL_PORT}:3002"
-    ulimits:
-      nofile:
-        soft: 65535
-        hard: 65535
-    healthcheck:
-      test:
-        - "CMD"
-        - "node"
-        - "-e"
-        - "fetch('http://localhost:3002/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-    restart: unless-stopped
-
-  # Firecrawl's own page-render microservice (its /scrape backend). Internal
-  # only; this is the browser layer — no separate playwright service exists.
-  firecrawl-playwright:
-    container_name: concierge-firecrawl-playwright
-    image: ghcr.io/firecrawl/playwright-service:latest
-    environment:
-      PORT: "3000"
-      BLOCK_MEDIA: ${FC_BLOCK_MEDIA}
-      MAX_CONCURRENT_PAGES: ${FC_CONCURRENT_REQUESTS}
-    tmpfs:
-      - /tmp
-    restart: unless-stopped
-
-  # Screenshot capture — a second instance of firecrawl's playwright-service
-  # image running a tiny mounted server (reuses its Chromium, no extra pull).
-  # Internal only; no BLOCK_MEDIA so page images render in shots.
-  screenshotter:
-    container_name: concierge-screenshotter
-    image: ghcr.io/firecrawl/playwright-service:latest
-    working_dir: /usr/src/app
-    command: ["node", "shot-server.js"]
-    volumes:
-      - ./infra/shot-server.js:/usr/src/app/shot-server.js:ro
-    tmpfs:
-      - /tmp
-    restart: unless-stopped
-
-  firecrawl-redis:
-    container_name: concierge-firecrawl-redis
-    image: redis:7-alpine
-    command: ["redis-server", "--bind", "0.0.0.0", "--appendonly", "no"]
-    volumes:
-      - fc-redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-    restart: unless-stopped
-
-  firecrawl-rabbitmq:
-    container_name: concierge-firecrawl-rabbitmq
-    image: rabbitmq:3-management-alpine
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    restart: unless-stopped
-
-  # Firecrawl's Nuq queue/store database (custom postgres image).
-  firecrawl-postgres:
-    container_name: concierge-firecrawl-postgres
-    image: ghcr.io/firecrawl/nuq-postgres:latest
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${FC_POSTGRES_PASSWORD}
-      POSTGRES_DB: postgres
-    volumes:
-      - fc-pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-    restart: unless-stopped
-
   # ------------------------------------------------------------- chatbot-concierge
-  # LangGraph orchestration layer — two deterministic, checkpointed graphs:
-  #   POST /index: crawl (firecrawl) -> chunk -> embed (ollama) -> store
-  #   POST /query: load corpus -> retrieve -> answer (no re-crawl)
-  # Poll GET /runs/{id} to watch node-by-node progression; demo UI at /.
+  # LangGraph orchestration layer — one deterministic, checkpointed graph:
+  #   POST /query: load corpus -> retrieve -> answer -> verify (loop)
+  # The corpus (corpora table, SQLite in ./data/langgraph.db) is written
+  # by the `extractor` service — this service only reads it.
+  # Poll GET /runs/{id} to watch node-by-node progression; chat page at /.
   chatbot-concierge:
     container_name: concierge
     build:
@@ -198,19 +41,14 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
       OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
-      FIRECRAWL_URL: http://firecrawl-api:3002
-      SCREENSHOT_URL: http://screenshotter:3000
+      # Shared qdrant (rag stack) on llm-network — corpus vectors live here.
+      QDRANT_URL: ${QDRANT_URL:-http://rag-qdrant:6333}
       CHATBOT_CONCIERGE_DB_PATH: /data/langgraph.db
       TZ: ${CONCIERGE_TZ:-America/Vancouver}
+    networks:
+      - llm-network
     volumes:
-      - chatbot-concierge-data:/data
-    depends_on:
-      firecrawl-api:
-        condition: service_healthy
-      ollama:
-        condition: service_healthy
-      screenshotter:
-        condition: service_started
+      - ./data:/data
     ports:
       - "127.0.0.1:${CHATBOT_CONCIERGE_PORT}:8080"
     healthcheck:
@@ -224,6 +62,67 @@ services:
       retries: 6
     restart: unless-stopped
 
+  # ---------------------------------------------------------------- extractor
+  # Admin corpus-builder + admin UI — the `admin` profile keeps it out of
+  # public deploys. Index graph (crawl->chunk->embed->store) writes
+  # corpora to the same ./data bind mount concierge reads.
+  extractor:
+    container_name: concierge-extractor
+    profiles: ["admin"]
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.extractor
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL}
+      # Shared firecrawl container (local-ai-stack) on llm-network — its
+      # own playwright backend renders JS-heavy pages; nothing to run here.
+      FIRECRAWL_URL: http://firecrawl:3002
+      SCREENSHOT_URL: http://screenshotter:3000
+      # Public concierge URL baked into embed tags — set once at deploy.
+      PUBLIC_CHATBOT_URL: ${PUBLIC_CHATBOT_URL:-http://localhost:8000}
+      QDRANT_URL: ${QDRANT_URL:-http://rag-qdrant:6333}
+      DB_PATH: /data/langgraph.db
+      TZ: ${CONCIERGE_TZ:-America/Vancouver}
+    networks:
+      - llm-network
+    volumes:
+      - ./data:/data
+    depends_on:
+      screenshotter:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${EXTRACTOR_PORT}:8080"
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped
+
+  # ------------------------------------------------------- screenshotter
+  # Homepage PNG capture for the admin UI — the shared playwright-service
+  # only serves /scrape (HTML), so this tiny node server runs on the same
+  # already-pulled image. Admin profile only; never published.
+  screenshotter:
+    container_name: concierge-screenshotter
+    profiles: ["admin"]
+    image: ghcr.io/firecrawl/playwright-service:latest
+    working_dir: /usr/src/app
+    command: ["node", "shot-server.js"]
+    volumes:
+      - ./infra/shot-server.js:/usr/src/app/shot-server.js:ro
+    networks:
+      - llm-network
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
   # ------------------------------------------------------------------- e2e
   # On-demand containerized test runner — zero host tooling needed:
   #   docker compose --profile test run --rm e2e
@@ -234,23 +133,18 @@ services:
     working_dir: /work
     volumes:
       - ./tests:/work
+    networks:
+      - llm-network
     environment:
       PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
-      FIRECRAWL_URL: http://firecrawl-api:3002
       OLLAMA_URL: http://ollama:11434
       CHATBOT_CONCIERGE_URL: http://chatbot-concierge:8080
     depends_on:
-      firecrawl-api:
-        condition: service_started
       chatbot-concierge:
-        condition: service_healthy
-      ollama:
         condition: service_healthy
     command: sh -c "npm install --no-audit --no-fund --silent && npx playwright test"
 
-volumes:
-  ollama-models:
-  fc-redis-data:
-  fc-pg-data:
-  chatbot-concierge-data:
+networks:
+  llm-network:
+    external: true

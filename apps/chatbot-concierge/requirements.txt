@@ -5,4 +5,3 @@ langgraph==1.2.15
 langgraph-checkpoint-sqlite==3.1.2
 aiosqlite==0.22.1
 fpdf2==2.8.9
-tzdata==2025.3
