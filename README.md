@@ -98,6 +98,7 @@ docker exec ollama ollama pull nomic-embed-text
 | Firecrawl (shared) | `http://localhost:3002` | container `firecrawl` on `llm-network` — extractor calls `http://firecrawl:3002` |
 | Chatbot concierge | `http://localhost:8000`  | public chat page at `/`, API at `/docs` |
 | Concierge admin | `http://localhost:8001`  | admin UI at `/` — `admin` profile only, never public |
+| Cloudflare tunnel | `*.trycloudflare.com` | publishes :8000 publicly — URL in `docker logs concierge-tunnel` |
 
 > **Network note:** both services reach Ollama and Firecrawl inside docker
 > as `http://ollama:11434` / `http://firecrawl:3002` on `llm-network`.
@@ -198,6 +199,12 @@ auth belong to whichever stack owns them.
 - **Never run `--profile admin` in production.** The admin UI is
   build-time tooling; deploy the concierge alone and ship the corpus data
   to it — and set `PUBLIC_CHATBOT_URL` to the real public origin.
+- The `tunnel` service runs a quick tunnel by default (random
+  `trycloudflare.com` URL, changes every restart — get it from
+  `docker logs concierge-tunnel`). For a stable hostname, create a
+  named tunnel in Cloudflare Zero Trust, set `CF_TUNNEL_TOKEN` in `.env`,
+  and switch the compose command to `tunnel run --token ${CF_TUNNEL_TOKEN}` —
+  then point `PUBLIC_CHATBOT_URL` at that hostname for correct embed tags.
 - `llm-network` with reachable `ollama` + `firecrawl` containers is a hard
   dependency — create the network and run/point at them before `up`.
 - Backup: `tar cf - data/` — it's a plain directory on the host.

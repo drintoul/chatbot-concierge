@@ -62,6 +62,27 @@ services:
       retries: 6
     restart: unless-stopped
 
+  # -------------------------------------------- cloudflare tunnel
+  # Publishes concierge:8080 on a stable public hostname — a named
+  # Cloudflare Tunnel (Zero Trust dashboard → Networks → Tunnels). Set
+  # CF_TUNNEL_TOKEN in .env; the dashboard maps the hostname to this
+  # container, which forwards to concierge:8080.
+  tunnel:
+    container_name: concierge-tunnel
+    image: cloudflare/cloudflared:2026.10.7
+    networks:
+      - llm-network
+    depends_on:
+      chatbot-concierge:
+        condition: service_healthy
+    environment:
+      # cloudflared reads TUNNEL_TOKEN natively — set CF_TUNNEL_TOKEN in
+      # .env and the named tunnel just runs. Until then the container
+      # exits with a clear "token required" error, which is expected.
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate run
+    restart: unless-stopped
+
   # ---------------------------------------------------------------- extractor
   # Admin corpus-builder + admin UI — the `admin` profile keeps it out of
   # public deploys. Index graph (crawl->chunk->embed->store) writes
