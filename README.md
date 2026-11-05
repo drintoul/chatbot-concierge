@@ -132,29 +132,28 @@ docker compose --profile test run --rm e2e
 
 ## Architecture
 
-```
-              llm-network  (shared docker network)
-┌───────────┐  ┌──────────────┐  ┌────────────┐
-│ ollama    │  │ firecrawl    │  │ rag-qdrant │ ◄── shared containers, owned
-│ (shared)  │  │ + playwright │  │ (shared)   │     by other stacks — this
-└──┬────────┘  └──────┬───────┘  └─────┬──────┘     project runs none of them
-   │ :11434           │ :3002          │ :6333
-   │                  │                │
-┌──┴───────────────┐  │                │ upserts vectors
-│ extractor  :8001 │◄─┘                │◄─────────────┐
-│ "concierge admin"│                   │              │
-│ map→scrape→chunk │  ┌────────────────┼───────────┐  │
-│ →embed→store     │  │ chatbot-       │ concierge │  │
-│ └─ screenshotter │  │ :8000          │ vector hits│  │
-│  (homepage PNGs) │  │ load→retrieve→ │◄───────────┘  │
-└───────┬──────────┘  │ answer→verify  │               │
-        │ writes      │ +widget.js,chat│  query: embed │
-        │ `corpora`   │  page,audit+PDF│  q→qdrant top │
-        ▼             └───────┬────────┘  hits→lexical │
-  ./data (bind mount)         │ reads     │  re-rank    │
-  SQLite langgraph.db ◄───────┘ `corpora` └─────────────┘
-  metadata + chunks + embeddings backup — the
-  extractor → concierge handoff
+```mermaid
+flowchart TB
+    subgraph shared["llm-network — shared containers (other stacks)"]
+        O["ollama :11434 — chat + embeddings"]
+        F["firecrawl :3002 — + playwright"]
+        Q["rag-qdrant :6333 — vector store"]
+    end
+
+    subgraph proj["this project"]
+        E["extractor :8001 — concierge admin<br/>index: map → scrape → chunk → embed → store<br/>+ screenshotter (homepage PNGs)"]
+        C["chatbot-concierge :8000<br/>query: load → retrieve → answer → verify<br/>+ widget.js, public chat page, audit + PDF"]
+    end
+
+    DB[("📁 ./data — SQLite langgraph.db<br/>corpora: pages, chunks, widget cfg,<br/>token, screenshot — the handoff")]
+
+    E -- "scrape" --> F
+    E -- "chat / embed" --> O
+    C -- "chat / embed" --> O
+    E -- "embed: upsert vectors" --> Q
+    C -- "retrieve: vector search → lexical re-rank" --> Q
+    E -- "writes corpora" --> DB
+    C -- "reads corpora" --> DB
 ```
 
 ## Knowledge base: who writes the corpus
