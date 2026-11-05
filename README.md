@@ -133,26 +133,28 @@ docker compose --profile test run --rm e2e
 ## Architecture
 
 ```
-            llm-network  (shared docker network)
-┌─────────────┐  ┌─────────────┐
-│ ollama      │  │ firecrawl   │ ◄── shared containers, owned by
-│ (shared)    │  │ + playwright│     another stack — not run here
-└──┬──────────┘  └──────┬──────┘
-   │ http://ollama      │ http://firecrawl:3002
-   │ :11434             │
-┌──┴───────────────────┐  │
-│ extractor  :8001     │◄─┤  ┌────────────────────┐
-│ "concierge admin"    │  │  │ chatbot-concierge  │ :8000 — query workflow
-│ index: map→scrape→   │  └──│ :8000              │   (load→retrieve→answer
-│ scrape→chunk→embed→  │     │ query: load→       │   →verify loop) over the
-│ store                │     │  retrieve→answer→  │   stored corpus — no
-│ └─ screenshotter     │     │  verify (loop)     │   re-crawl per question.
-│    (homepage PNGs)   │     │ + widget.js, chat  │   Serves widget.js,
-└──────────┬───────────┘     │   page, screenshots│   the public chat page,
-           │ writes `corpora`└──────────┬─────────┘   audit log + PDF.
-           ▼                            │ reads `corpora`
-  ./data (bind mount) ◄───────────────┘
-  the extractor → concierge handoff
+              llm-network  (shared docker network)
+┌───────────┐  ┌──────────────┐  ┌────────────┐
+│ ollama    │  │ firecrawl    │  │ rag-qdrant │ ◄── shared containers, owned
+│ (shared)  │  │ + playwright │  │ (shared)   │     by other stacks — this
+└──┬────────┘  └──────┬───────┘  └─────┬──────┘     project runs none of them
+   │ :11434           │ :3002          │ :6333
+   │                  │                │
+┌──┴───────────────┐  │                │ upserts vectors
+│ extractor  :8001 │◄─┘                │◄─────────────┐
+│ "concierge admin"│                   │              │
+│ map→scrape→chunk │  ┌────────────────┼───────────┐  │
+│ →embed→store     │  │ chatbot-       │ concierge │  │
+│ └─ screenshotter │  │ :8000          │ vector hits│  │
+│  (homepage PNGs) │  │ load→retrieve→ │◄───────────┘  │
+└───────┬──────────┘  │ answer→verify  │               │
+        │ writes      │ +widget.js,chat│  query: embed │
+        │ `corpora`   │  page,audit+PDF│  q→qdrant top │
+        ▼             └───────┬────────┘  hits→lexical │
+  ./data (bind mount)         │ reads     │  re-rank    │
+  SQLite langgraph.db ◄───────┘ `corpora` └─────────────┘
+  metadata + chunks + embeddings backup — the
+  extractor → concierge handoff
 ```
 
 ## Knowledge base: who writes the corpus
