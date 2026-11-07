@@ -550,7 +550,7 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
             f"{FIRECRAWL}/v2/batch/scrape",
             json={
                 "urls": picked,
-                "formats": ["markdown"],
+                "formats": ["markdown", "html"],
                 "onlyMainContent": True,
             },
         )
@@ -589,6 +589,23 @@ async def crawl(state: ChatbotConciergeState, config: RunnableConfig) -> Chatbot
         pages = []
         for d in data:
             md = d.get("markdown") or ""
+            html = d.get("html") or ""
+            # Content lives in an embedded doc — a published Google Doc
+            # iframe IS the page's content (menus, stockist lists). Scrape
+            # the iframe src and merge it in whenever one exists.
+            m = _DOC_IFRAME.search(html)
+            if m:
+                try:
+                    r2 = await http.post(
+                        f"{FIRECRAWL}/v2/scrape",
+                        json={"url": m.group(1), "formats": ["markdown"]},
+                    )
+                    if r2.status_code == 200:
+                        emb = (r2.json().get("data") or {}).get("markdown") or ""
+                        if emb:
+                            md += "\n\n" + emb
+                except Exception:
+                    pass
             if len(md) < 40:
                 continue
             meta = d.get("metadata") or {}
@@ -627,7 +644,7 @@ async def _shot(http: httpx.AsyncClient, url: str) -> bytes | None:
 
 
 _IMAGE_LINE = re.compile(r"^\s*!\[.*\]\(.*?\)\s*\\?\s*$")
-_LINK_LINE = re.compile(r"^\s*\[.*\]\(.*?\)\s*\\?\s*$")
+_LINK_LINE = re.compile(r"^\s*[-*+]?\s*\[.*\]\(.*?\)\s*\\?\s*$")
 _BOILERPLATE = re.compile(
     r"consent management|cookies?|all rights reserved|powered by|newsletter|"
     r"privacy policy|terms of (service|use)|accept all|skip to (main )?(content|nav)",
@@ -780,6 +797,10 @@ _TOKEN_WORDS = (
     "LACROSSE DOUBLEDOUBLE LUMBERJACK VOYAGEUR POLARBEAR ATLANTIC CANADAGOOSE"
 ).split()
 _TOKEN_RE = re.compile(r"[A-Z]{8,}")
+# Pages that put their real content in an embedded doc — e.g. a published
+# Google Doc iframe (store-locator lists are often done this way).
+_DOC_IFRAME = re.compile(
+    r'<iframe[^>]+src="(https?://docs\.google\.com/document[^"\s]+)"', re.I)
 
 
 def _new_token() -> str:
@@ -840,20 +861,32 @@ async def store(state: ChatbotConciergeState) -> ChatbotConciergeState:
         ),
     )
     await _db.commit()
-    # Cache the Business Facts extraction — the corpus is fixed until the
-    # next reindex, so the facts are too.
+    return {
+        "status": "done",
+        "steps": [step("store", "ok", url=url, chunks=len(state["chunks"]))],
+    }
+
+
+async def facts(state: ChatbotConciergeState, config: RunnableConfig) -> ChatbotConciergeState:
+    """Deterministic multi-topic extraction, cached on the corpus. Chunks
+    are bucketed by fixed topic rules, each bucket gets one focused LLM
+    call under the context budget, and results merge in code — same
+    corpus → same buckets → same prompts → same facts."""
+    if bail(state):
+        return {}
+    url = _canon(state["url"])
+    t0 = time.time()
     try:
         out = await _facts_from_chunks(state["chunks"])
         await _db.execute(
             "UPDATE corpora SET facts=? WHERE url=?", (json.dumps(out), url)
         )
         await _db.commit()
-    except Exception:
-        pass  # facts are a nice-to-have — never fail the store node over them
-    return {
-        "status": "done",
-        "steps": [step("store", "ok", url=url, chunks=len(state["chunks"]))],
-    }
+        return {"steps": [step("facts", "ok", ms=round((time.time() - t0) * 1000),
+                               fields=len(out.get("facts") or {}))]}
+    except Exception as e:
+        # Facts are a nice-to-have — never fail the index run over them.
+        return {"steps": [step("facts", "skipped", note=str(e)[:80])]}
 
 
 # ------------------------------------------------------- query-graph nodes
@@ -1324,7 +1357,7 @@ async def lifespan(app: FastAPI):
         await _db.commit()
 
     _index_graph = _build(
-        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store)]
+        [("crawl", crawl), ("chunk", chunk), ("embed", embed), ("store", store), ("facts", facts)]
     )
     _query_graph = _build(
         [("load", load), ("retrieve", retrieve), ("answer", answer), ("verify", verify)],
@@ -1505,29 +1538,25 @@ async def extract(req: ExtractRequest) -> dict[str, Any]:
     }
 
 
-async def _facts_from_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
-    """LLM-extract business facts from stored chunks — used by the index
-    pipeline (cached on the corpus) and as /business-facts' fallback."""
-    # Business-flavoured pages first (contact/hours/menu/about…), then the
-    # rest — same idea as /extract's core-path follow, minus the scrape.
-    def core(c: dict[str, Any]) -> bool:
-        path = (urlparse(c.get("source") or "").path or "/").lower()
-        return bool(_EXTRACT_PATH.search(path)) and not _JUNK_PATH.search(path)
-    picked = [c for c in chunks if core(c)] + [c for c in chunks if not core(c)]
-    docs, used = [], set()
-    budget = 12000  # chars — keeps the prompt under the shared ollama's 4k ctx
-    for c in picked:
-        src = c.get("source") or "?"
-        if budget <= 0:
-            break
-        used.add(src)
-        docs.append(f"[{src}]\n{c.get('text') or ''}"[:_EXTRACT_MAX_MD])
-        budget -= len(docs[-1])
-    if not docs:
-        return {"facts": {}, "pages": []}
+# Facts extraction is a deterministic pipeline, not one big prompt: chunks
+# get bucketed by fixed topic rules (a chunk can land in several buckets),
+# each non-empty bucket gets one focused LLM call under the ctx budget, and
+# the results merge in code — first non-empty value wins. Same corpus →
+# same buckets → same prompts → same facts. Each call is small and on-topic
+# so the model can't skim or drop fields the way it does on a giant dump.
+_TOPIC_RULES: list[tuple[str, re.Pattern]] = [
+    ("contact",   re.compile(r"phone|e-?mail|contact|call us|reach us", re.I)),
+    ("hours",     re.compile(r"(mon|tue|wed|thu|fri|sat|sun)(day)?s?\b|\b\d{1,2}\s?(am|pm)\b|hours? of|open (daily|from)|closed", re.I)),
+    ("prices",    re.compile(r"\$\s?\d|\bprices?\b|\bcost\b|\brates?\b|\bfees?\b|deposit|cover", re.I)),
+    ("policies",  re.compile(r"polic|reserv|cancel|refund|\bpets?\b|\bdogs?\b|kids|children|minors|19\+|21\+|allerg|gluten|take.?out|deliver", re.I)),
+    ("menu",      re.compile(r"abv|ibu|menu|appetizer|entree|dessert|topping|skewer|marinat|served with|on tap", re.I)),
+    ("locations", re.compile(r"location|address|\b(rd|st|ave|blvd|dr|ln|hwy|road|street|avenue|drive|way)\b\.?", re.I)),
+]
 
-    # Ollama 500s intermittently under load — retry; think:false keeps
-    # qwen3's reasoning out of `content` and off the hot path.
+
+async def _facts_llm(docs: list[str]) -> dict[str, Any]:
+    """One focused extraction call — retries transient ollama 5xx;
+    think:false keeps qwen3's reasoning out of `content`."""
     res = None
     for attempt in range(3):
         try:
@@ -1552,11 +1581,53 @@ async def _facts_from_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
             await asyncio.sleep(2)
     raw = res.json()["choices"][0]["message"]["content"].strip()
     try:
-        facts = json.loads(raw)
+        return json.loads(raw)
     except json.JSONDecodeError:
         m = re.search(r"\{.*\}", raw, re.S)
-        facts = json.loads(m.group(0)) if m else {"raw": raw}
-    return {"facts": _clean_facts(facts), "pages": sorted(used)}
+        return json.loads(m.group(0)) if m else {}
+
+
+async def _facts_from_chunks(chunks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Multi-topic extraction — bucket chunks, extract per bucket, merge.
+    `topics` lists the buckets that had content: what the concierge can
+    actually talk about."""
+    def core(c: dict[str, Any]) -> bool:
+        path = (urlparse(c.get("source") or "").path or "/").lower()
+        return bool(_EXTRACT_PATH.search(path)) and not _JUNK_PATH.search(path)
+
+    buckets: dict[str, list[dict[str, Any]]] = {k: [] for k, _ in _TOPIC_RULES}
+    buckets["general"] = [c for c in chunks if core(c)] or list(chunks[:8])
+    for c in chunks:
+        hay = f"{c.get('source') or ''}\n{c.get('text') or ''}".lower()
+        for name, pat in _TOPIC_RULES:
+            if pat.search(hay):
+                buckets[name].append(c)
+
+    merged: dict[str, Any] = {}
+    used: set[str] = set()
+    for name in ["general"] + [k for k, _ in _TOPIC_RULES]:
+        docs, budget = [], 12000  # chars — keeps prompts under the 4k ctx
+        for c in buckets[name]:
+            if budget <= 0:
+                break
+            src = c.get("source") or "?"
+            used.add(src)
+            docs.append(f"[{src}]\n{c.get('text') or ''}"[:_EXTRACT_MAX_MD])
+            budget -= len(docs[-1])
+        if not docs:
+            continue
+        try:
+            part = await _facts_llm(docs)
+        except Exception:
+            continue  # a failed topic is a gap in facts, not a run failure
+        for k, v in (part or {}).items():
+            if v and not merged.get(k):
+                merged[k] = v
+    return {
+        "facts": _clean_facts(merged),
+        "pages": sorted(used),
+        "topics": sorted(k for k, v in buckets.items() if v),
+    }
 
 
 @app.get("/business-facts")
@@ -1764,6 +1835,22 @@ async def list_sites() -> dict[str, Any]:
                 "indexed_at": indexed_at,
             })
     return {"sites": out}
+
+
+@app.post("/sites/rename")
+async def rename_site(body: dict[str, Any]) -> dict[str, Any]:
+    """Rename a corpus — the label shown in admin lists and the public
+    picker. Title-only; the corpus key (url) and token are unchanged."""
+    canon = _canon(body.get("url") or "")
+    title = (body.get("title") or "").strip()
+    async with _db.execute(
+        "UPDATE corpora SET title=? WHERE url=?", (title, canon)
+    ) as cur:
+        n = cur.rowcount
+    await _db.commit()
+    if not n:
+        raise HTTPException(404, "site not indexed")
+    return {"ok": True, "title": title}
 
 
 @app.delete("/sites")

@@ -1,0 +1,1136 @@
+[
+  {
+    "question": "wut time do u guys open",
+    "answer": "We open at **11:30 AM** today, Friday, November 6, 2026, and stay open until **9:30 PM**.  \n\nWe don\u2019t take reservations \u2014 come as you are!",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do yous have food or is it just beer",
+    "answer": "We don\u2019t mention food availability in the context provided. Our focus is on beer, with hours listed for visits to our Chilliwack and Abbotsford locations. For specifics about food, you may want to check our website or contact us directly.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 36.3,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "can i bring my dog",
+    "answer": "We don\u2019t specify pet policies in the context provided. For clarity on whether dogs are welcome, please contact us directly at the brewery, as our ALR regulations and operational details aren\u2019t fully outlined here.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co",
+    "status": "done",
+    "secs": 24.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "were are you located at",
+    "answer": "We are located in Chilliwack, BC, and Abbotsford. Our Chilliwack location features outdoor seating, a campfire, and a playground, while Abbotsford is another of our brewery sites. We don\u2019t list specific addresses in the provided context, but these are the two cities where our breweries operate.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 40.3,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do yall do flights or like samplers",
+    "answer": "I don't have that information. The context provided is for a sample page that doesn't include details about offerings like flights or samplers. It\u2019s placeholder text for a website navigation example, not a description of our products or services.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/sample-page",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "is there parking there",
+    "answer": "Yes, there is parking available. Our brewery\u2019s entrance is off **Sumas Way** to our parking lots located to the north of Seasons Market, or off **South Parallel Road**.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/abbotsford",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "can kids come in or is it 19 plus only",
+    "answer": "At our Chilliwack location, kids are absolutely welcome! We have a dedicated playground area for children, and the brewery is designed to be a family-friendly space where guests of all ages can enjoy craft beer, outdoor seating, and a campfire experience. Our Abbotsford location\u2019s policies aren\u2019t detailed in the context, but our Chilliwack site explicitly welcomes families. No age restrictions are mentioned for either location.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do you sell cans or growlers to go",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://farmhousebrewing.co/where-to-buy",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "whats on tap right now",
+    "answer": "We don\u2019t publish a real-time tap list on this page, but you can check our current offerings directly at our locations in [Chilliwack](https://farmhousebrewing.co/chilliwack) or [Abbotsford](https://farmhousebrewing.co/abbotsford). Our menu includes small-batch, handcrafted brews made on-site, and our staff can guide you through what\u2019s available at the moment. For the most up-to-date list, we recommend visiting us in person or checking our website\u2019s beer section.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co",
+    "status": "done",
+    "secs": 40.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do you have any gluten free beer",
+    "answer": "We don\u2019t list specific beer details (including gluten content) in the provided context. For the most accurate information about our current lineup, including gluten-free options, we recommend checking our website\u2019s \"See what\u2019s on tap!\" section or contacting us directly. \n\nOur hours today (Friday, November 6, 2026) are **11:30 AM \u2013 9:30 PM**. You\u2019re welcome to visit us in person at 6385 Lickman Rd., Chilliwack, BC.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/about-2024",
+    "status": "done",
+    "secs": 48.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "can i book a table for saturday nite",
+    "answer": "We don\u2019t publish details about regular table reservations on our events page \u2014 this content only covers event bookings, which require a deposit and submission of information after payment. For general dining reservations or questions about Saturday night availability, please check our main website or contact us directly.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/events",
+    "status": "done",
+    "secs": 52.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do you host private events or partys",
+    "answer": "Yes, we host private events and parties at our Chilliwack and Abbotsford locations. Our available spaces include:  \n\n- **Chilliwack Solarium**: 20\u201325 guests, **$350** (covered & heated patio).  \n- **Chilliwack Solarium & Main Patio**: 40\u201350 guests, **$700** (combined covered & heated patios).  \n- **Abbotsford Bakerview Patio**: 30\u201340 guests (details not specified for pricing).  \n\n**Note**: Bookings for these spaces are required to secure the area for larger events. For non-booked events, we operate on a first-come, first-serve basis with no reservations, and wait times may vary.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/events",
+    "status": "done",
+    "secs": 52.4,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "wat time does the kitchen close",
+    "answer": "We don\u2019t publish specific kitchen closing times in our context, but our general operating hours are:  \n- **Monday \u2013 Thursday:** 11:30 AM \u2013 8:30 PM  \n- **Friday \u2013 Saturday:** 11:30 AM \u2013 9:30 PM  \n- **Closed Sundays**  \n\nPlease note these are our overall hours, and we do not take reservations. Kitchen details beyond this are not included in our context.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/about-2024",
+    "status": "done",
+    "secs": 52.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "got any non alcoholic drinks",
+    "answer": "Yes, we have several non-alcoholic drinks available today:  \n\n- **AFT Non-Alcoholic Beer** (12oz \u2013 $7.25)  \n- **Bottled Water** ($3.75)  \n- **Spinnakers Sparkling Water** ($5.75, rotating flavors)  \n- **Iced Tea** ($3.75, Fuse brand in a can)  \n- **Healthy Hoosh Kombucha** (5oz \u2013 $3.75, 12oz \u2013 $7.75, rotating flavors \u2013 ask staff for current options)  \n- **Ol\u00e9 Craft Mocktails** ($6.75, flavors: lime, mango, grapefruit)  \n\nLet me know if you\u2019d like details about any specific item!",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/beer-chilliwack",
+    "status": "done",
+    "secs": 36.4,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "is there a happy hour",
+    "answer": "We don\u2019t mention a happy hour on our site, but you\u2019re welcome to visit during our hours (see above) and enjoy our taps! For specific promotions, check our website or reach out directly.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/about-2024",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "how much is a pint",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://farmhousebrewing.co/beer-chilliwack",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do yous do brewery tours",
+    "answer": "We don\u2019t specifically mention brewery tours in our context, but our Chilliwack location offers a welcoming outdoor experience with features like outdoor seating, a campfire, covered patio, indoor tasting lounge, playground, putting green, and wood-fired oven bites. For event bookings (available Tuesdays\u2013Thursdays), please visit our booking page directly. Tours aren\u2019t explicitly listed in the provided context.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 28.3,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "can i buy a gift card for my dad",
+    "answer": "Yes, you can purchase a gift card for your dad. We offer gift cards that can be bought online, so you don\u2019t need to visit the brewery in person. For details on how to purchase or any current restrictions, you can check our [gift cards page](https://farmhousebrewing.co/gift-cards).",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/gift-cards",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "are you open on holidays like boxing day",
+    "answer": "We don\u2019t list holiday hours in the provided context, so I cannot confirm our status on Boxing Day. For the most accurate information, please check our website or contact us directly at [info@farmhousebrewing.co](mailto:info@farmhousebrewing.co). Our regular hours are Monday\u2013Thursday 11:30\u20138:30, Friday\u2013Saturday 11:30\u20139:30, and we are closed on Sundays.",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/about-2024",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "do you have wifi for customers",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://farmhousebrewing.co/events",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "any vegan options on the menu",
+    "answer": "We don\u2019t explicitly list \u201cvegan\u201d designations on our menu, but all our beers are brewed with plant-based ingredients and do not contain animal-derived products like milk, honey, or gelatin. Our lineup includes:\n\n- **Daybreak Hazy IPA** (hops, stone fruit, citrus)  \n- **Greendale Golden Ale** (Comet hops, malts)  \n- **Windmill Pilsner** (German malts, hops, yeast)  \n- **Nightfall Dark Lager** (crystal/roasted malts)  \n- **Blackberry Peach Cobbler Sour** (barley, wheat, oats, blackberry, peach)  \n- **Raspberry Lemonade Sour** (barley, wheat, oats, raspberry)  \n\nNo non-vegan ingredients are mentioned in our descriptions. For certainty, you may want to confirm directly with us, as some breweries use non-vegan fining agents (not listed here).",
+    "grounded": true,
+    "source": "https://farmhousebrewing.co/info",
+    "status": "done",
+    "secs": 68.2,
+    "site": "https://farmhousebrewing.co/"
+  },
+  {
+    "question": "what time are you open",
+    "answer": "Our online store is always open. For physical store hours, please check our [Hours and Holiday Closures page](https://westerncanoekayak.com/contact-us/hours-and-holiday-closures/). Specific daily hours are not listed here, but you can find them via that link.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/contact-us",
+    "status": "done",
+    "secs": 25.2,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "are you open sundays",
+    "answer": "We don't list specific Sunday hours directly here, but you can check our [Hours and Holiday Closures page](https://westerncanoekayak.com/contact-us/hours-and-holiday-closures/) for detailed operating hours and closure dates.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/contact-us",
+    "status": "done",
+    "secs": 29.2,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "where are you guys located",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://westerncanoekayak.com/backpacks",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you rent kayaks",
+    "answer": "We don\u2019t offer kayak rentals \u2014 our focus is on selling trailers for transporting kayaks and canoes. Explore our lineup of trailers designed for cars, including options for 2 kayak trailers, 10 canoe trailers, and more. Let us know if you\u2019d like help finding the right trailer for your needs!",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/trailers",
+    "status": "done",
+    "secs": 29.6,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "how much is it to rent a canoe",
+    "answer": "I don't have that information. Our website only lists trailer prices for canoes like the Spirit Dancer 39' (C$7,260.00) and the Mariner/Clan Dancer (C$4,980.00). For rental pricing, you would need to check our website's rental section or contact us directly for current rates and availability.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/trailers",
+    "status": "done",
+    "secs": 28.9,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you sell used canoes",
+    "answer": "I don't have that information. The context provided only lists new canoe paddles for sale, with no mention of used canoes or secondhand equipment. For details about used canoes, you may need to check our main inventory page or contact us directly.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/paddles-oars-accessories",
+    "status": "done",
+    "secs": 53.7,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "whats your return policy",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://westerncanoekayak.com/paddling-gear",
+    "status": "done",
+    "secs": 78.1,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you offer kayak lessons",
+    "answer": "We don\u2019t offer kayak lessons or instructional services. Our focus is on selling paddling gear, apparel, and adventure essentials like kayaks, PFDs, paddling gloves, and more. For lessons, you might want to check with local recreation centers, outdoor schools, or certified paddling instructors in your area.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/boats-and-boards",
+    "status": "done",
+    "secs": 37.0,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "can i demo a kayak before i buy it",
+    "answer": "I don't have that information. Our context focuses on trailers for canoes and kayaks, not kayak demos or retail experiences. For demo availability, you'd need to contact local retailers or manufacturers directly.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/trailers",
+    "status": "done",
+    "secs": 28.9,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do yous have paddleboards too",
+    "answer": "Yes, we have paddleboards in our collection. Our paddleboard range includes designs for all skill levels, from casual touring to high-performance surfing. While the context doesn\u2019t specify paddleboard prices, our lineup features options tailored to different needs and abilities.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/boats-and-boards",
+    "status": "done",
+    "secs": 28.5,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you sell life jackets",
+    "answer": "Yes, we sell life jackets and PFDs (Personal Flotation Devices). Our Life Jackets + PFD page features multiple products, with options to view them 8\u201360 per page and sort by criteria like price, popularity, or alphabetical order. Specific product details (e.g., sizes, materials, safety ratings) are not listed here, but you can browse and filter offerings directly on our site.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/lifejackets-and-pfds",
+    "status": "done",
+    "secs": 28.5,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "whats a good kayak for a beginer",
+    "answer": "For a beginner, we recommend a recreational kayak designed for calm waters, which typically measures around 10 feet long and 28 inches wide. This size offers enhanced stability and maneuverability, making it ideal for learning and casual paddling. \n\nWe also suggest consulting our expert team to ensure the kayak\u2019s weight capacity matches your body weight and to discuss any specific needs. \n\nNote: Our context doesn\u2019t cover pricing, brands, or additional features like storage or seating, which you may want to explore further.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/boats-and-boards",
+    "status": "done",
+    "secs": 28.8,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you do repairs on canoes",
+    "answer": "We don\u2019t perform repairs on canoes directly, but we offer tools to help with your own repairs. Our [all-in-one repair kit](https://westerncanoekayak.com/paddling-gear) includes essentials for quick fixes or maintenance. Prices for the kit are now C$16.95. For other accessories, like the canoe bow thwart bag (C$64.95), we focus on products to enhance safety and usability rather than repair services.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/paddling-gear",
+    "status": "done",
+    "secs": 28.6,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "is there parking at the shop",
+    "answer": "I don't have that information. Our website lists product brands and gift ideas but doesn't specify parking availability at our physical locations. For details about store access or parking, you might want to check our contact page or call us directly.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/contact-us",
+    "status": "done",
+    "secs": 131.4,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "can i order online and pick up in store",
+    "answer": "Our online store is always open, and you can view our physical store hours [here](https://westerncanoekayak.com/contact-us/hours-and-holiday-closures/). While we don\u2019t explicitly mention pickup options in the provided context, you may want to confirm availability directly with us via our contact form or phone number: **604-853-9320**.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/contact-us",
+    "status": "done",
+    "secs": 37.4,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you price match other stores",
+    "answer": "We don\u2019t explicitly mention a price-match policy on our site. However, we do offer custom builds if your preferred color or option isn\u2019t listed, as noted on our product pages. For specific inquiries about pricing or comparisons, you may want to contact us directly.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/novelty-gifts",
+    "status": "done",
+    "secs": 69.8,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "what brands do you carry",
+    "answer": "We carry the following brands for paddle gear bags and duffels:  \n\n- **Blackwater** (e.g., Padded Paddle Bag 54\" w/Blackwater Logo)  \n- **WCK** (e.g., WCK Padded Paddle Bag 54\" w/WCK Logo)  \n- **Hobie** (e.g., Hobie MirageDrive Carry Bag)  \n\nThe context does not mention other brands in this category.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/paddle-gear-bags-and-duffels",
+    "status": "done",
+    "secs": 41.1,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you have dry bags and waterproof stuff",
+    "answer": "Yes, we offer dry bags. Our lineup includes various dry bags designed for keeping gear safe from water. We don't publish details about other waterproof items beyond dry bags on this page. For specific product details, you may want to explore our catalog further.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/dry-bags",
+    "status": "done",
+    "secs": 32.7,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "when do kayaks usually go on sale",
+    "answer": "I don't have that information. Our current listings show prices for kayak gear like the Tsunami 125/140/145 deck storage pouches (C$52.99), Esquif 3D x 36 nylon float bags (C$142.00), and Pelican kayak drain plugs, but we don't publish details about sale timelines or seasonal availability schedules.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/kayak-gear",
+    "status": "done",
+    "secs": 28.5,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "whats ur phone number",
+    "answer": "Our phone number is **604-853-9320**. Feel free to call us with any questions or to chat about adventures!",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/contact-us",
+    "status": "done",
+    "secs": 28.5,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "can i trade in my old canoe",
+    "answer": "I don't have that information. Our page focuses on paddles, oars, and accessories \u2014 we don't mention trade-in programs or policies for canoes on this page. For details about trading in equipment, you might want to check our main website or contact our customer service directly.",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/trailers",
+    "status": "done",
+    "secs": 61.7,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "do you sell roof racks for my car",
+    "answer": "We don\u2019t sell roof racks for cars directly, but we offer accessories like the **Yakima SightClip**, which attaches to factory-installed roof racks on vehicles. This product is designed to work with a broad range of cars but requires your car already have a compatible roof rack system. For specific roof rack models or compatibility with your vehicle, you may need to consult your car\u2019s manufacturer or a specialty retailer. \n\nWe also carry parts like the **Vertiyak Safety Hitch Pin** (C$5.99) and hitch accessories, but not roof racks themselves. Let me know if you\u2019d like help with compatible accessories!",
+    "grounded": true,
+    "source": "https://westerncanoekayak.com/rack-parts-and-accessories",
+    "status": "done",
+    "secs": 33.0,
+    "site": "https://westerncanoekayak.com/"
+  },
+  {
+    "question": "what time do you open",
+    "answer": "We open daily at 11:00 am. Our hours are:  \n- **Sunday - Monday**: 11:00 am - 8:00 pm  \n- **Tuesday - Saturday**: 11:00 am - 10:00 pm  \n\nBoth our Abbotsford and Chilliwack locations follow this schedule.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/contact-us",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you have two locations or just one",
+    "answer": "We have two locations. The event mentions both Field House locations will be participating, with the East Abby location specifically noted in the address.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/good-times",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "were is the chilliwack location",
+    "answer": "Our Chilliwack location is at **9251 Woolly Dog Alley #102, Chilliwack, BC V2P 0J6**.  \n\n**Hours today (Friday, November 6, 2026):**  \n- **11:00 am - 10:00 pm**  \n\nLet us know if you need further details!",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/contact-us",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you serve food",
+    "answer": "We don\u2019t serve food at our tasting rooms. Our focus is on beer-related offerings, such as growlers and fill vouchers, as detailed in our donation request form. The context doesn\u2019t mention food service or related policies.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "hows the pizza",
+    "answer": "We don\u2019t have pizza on our menu today, but we do offer a variety of tacos and other dishes. Here\u2019s what\u2019s available:  \n\n- **Taco** (slow-braised pork, corn/bean salsa, charred pineapple, etc.) | $19.00  \n- **Roasted Veg Taco** (sweet potato, red pepper, ancho chili, etc.) | $19.00  \n- **Braised Lamb Taco** (lamb, cucumber/pepper salsa, chipotle aioli) | $21.00  \n- **Street Corn Dip** (cream cheese, mozzarella, cheddar, corn, tortilla chips) | $15  \n- **Street Corn Riblets** (marinated corn, chipotle aioli, feta, jalape\u00f1o) | $14  \n\nLet me know if you\u2019d like more details!",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/good-times-1",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "can i bring my dog",
+    "answer": "We don\u2019t specify pet policies on our website, but you may want to reach out directly to confirm. Our locations in Abbotsford and Chilliwack are open daily from 11:00 am to 8:00 pm on Sundays and Mondays, and 11:00 am to 10:00 pm Tuesday through Saturday.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/contact-us",
+    "status": "done",
+    "secs": 48.3,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you have a patio",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/fieldsessionsform",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "are kids allowed",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do yous do trivia nights",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/group-booking",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "can i buy beer to go",
+    "answer": "I don't have that information. Our beer archive page lists our full catalog of releases since 2015, but it doesn't specify purchasing options. For details about buying beer to go, I recommend checking our main website or contacting us directly through our official channels.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/good-beers",
+    "status": "done",
+    "secs": 40.3,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "got any non beer options like cider",
+    "answer": "We don\u2019t list any non-beer options like cider on our beer programs page. Our focus is on craft beer, including experimental brews, aged farmhouse ales, and seasonal small-batch creations. For details about other beverages, you may want to visit us directly or check our full menu in person.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/beer-programs",
+    "status": "done",
+    "secs": 32.2,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "whats your sour beer selection like",
+    "answer": "We don\u2019t currently list any sour beers in the context provided, but you can check our tap lists for seasonal or rotating sour offerings. Our \"Good Beers\" category includes a variety of styles, but specific sour selections aren\u2019t detailed here. For the latest options, visit our taproom or explore our online tap list.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/field-house-beer-archive?category=Good+Beers",
+    "status": "done",
+    "secs": 44.5,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "can i rent the space for a party",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you sell merch",
+    "answer": "Yes, we sell limited-edition anniversary merch, including:  \n- Throwback-inspired tees  \n- Anniversary hats  \n- A special community beer featuring YOUR name  \n- Limited-edition collectibles  \n\nThis merch drop is part of our 10th-anniversary celebration, which included a live music event on **Friday, January 16, 2026**. We don\u2019t specify ongoing availability beyond this event in the context, but these items were offered during the celebration.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/good-times-1",
+    "status": "done",
+    "secs": 44.3,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "is there parking at the abbotsford spot",
+    "answer": "We don\u2019t have parking details listed for our Abbotsford Tasting Room in the context provided. For the most accurate information about parking, we recommend contacting the venue directly or checking our official website for updates.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/fieldsessionsform",
+    "status": "done",
+    "secs": 48.5,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you take reservations",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/beer-programs",
+    "status": "done",
+    "secs": 104.7,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you have live music",
+    "answer": "Yes, we host live music weekly in our Abbotsford and Chilliwack Tasting Rooms as part of our Field Sessions. The events aim to create a warm, intimate atmosphere with music that pairs well with our beer. If you're a local artist interested in performing, you can submit our artist application form \u2014 we review all submissions but may not respond to every inquiry due to high volume.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/fieldsessionsform",
+    "status": "done",
+    "secs": 68.7,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "what beers do you have in cans",
+    "answer": "We have the following beers available in cans:\n\n- **Super Tall Hazy Double IPA 8.5%**: Available in Single 568ml Cans. Features guava, citrus, and tropical notes.\n\nOther beers are listed as available in \"4 x 473ml\" but the container type (e.g., cans, bottles) is not explicitly stated in the context for those entries.",
+    "grounded": true,
+    "source": "https://fieldhousebrewing.beer/core-beers",
+    "status": "done",
+    "secs": 40.3,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you deliver",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "can i get a keg for a party",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "do you have gift cards",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fieldhousebrewing.beer/donation-request-form",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.fieldhousebrewing.beer/"
+  },
+  {
+    "question": "how much is a room per night",
+    "answer": "The base rate for a Dome is **$512.50 per night** for 2 guests, with a **2-night minimum stay** and a **$150 cleaning fee**. Additional guests up to 4 are **$50 each**.  \n\nPricing is listed for **Low Season (November\u2013February)**, **Mid Season (March\u2013June)**, and **High Season (July\u2013October)**, but the rate shown ($512.50) is identical across all seasons. We do not specify variations by season in the provided context.  \n\nNote: The context does not mention prices for stays outside the listed seasons or for different room types beyond the Dome.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/rooms-suites/executive-suite",
+    "status": "done",
+    "secs": 133.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "what time is check in and check out",
+    "answer": "**Check-in:** 4:00 PM  \n**Check-out:** 10:00 AM  \n\nThese times apply to all stays at Fraser River Lodge, as noted in our policy.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/rooms-suites/deluxe",
+    "status": "done",
+    "secs": 32.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you allow pets",
+    "answer": "We allow dogs in our Bison Hot Tub Suites, with an extra cleaning fee of $75 per stay. However, pets are not permitted in wedding guest accommodations.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/rooms-suites/bison-suites",
+    "status": "done",
+    "secs": 32.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "is breakfast included",
+    "answer": "The context refers to breakfast as \"one last opportunity to spend time together\" but does not explicitly state whether it is included in the venue's offerings or available as a separate option. To confirm, you would need to inquire directly with the venue about inclusions or availability.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/10-questions-to-ask-before-booking-a-wedding-venue-in-bc",
+    "status": "done",
+    "secs": 60.5,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do the rooms have wifi",
+    "answer": "Yes, our Deluxe and Executive (honeymoon) rooms include free WIFI. Other accommodations listed (e.g., The Homestead Chalet, Hillside View, Riverside Domes, etc.) are not specifically mentioned as having WIFI in the provided context.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/lodge/accommodations",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "can i book a fishing trip",
+    "answer": "Yes, you can book a guided sturgeon fishing trip with us. We also offer a helicopter fishing experience as part of our Canyon fishing trip, which includes a scenic helicopter pick-up and landing on an island in the river. To proceed with booking either option, please contact our team directly.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/fishing/sturgeon-fishing",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "whats included in the fishing packages",
+    "answer": "We don\u2019t publish specifics about fishing package inclusions on this page. To learn what\u2019s included in our guided fishing excursions, contact us directly at 604.796.1210 or email fishing@fraserriverlodge.co.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/3-reasons-to-go-fishing-in-bc",
+    "status": "done",
+    "secs": 40.5,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you have cabins or just rooms",
+    "answer": "We have rooms and suites, not cabins. Each unit sleeps 2 to 8 guests, most include a private hot tub, and all are dog-friendly. Our accommodations are designed for comfort and include the Luxury Bison Suites, which are available during high season (May\u2013October) at rates starting at $449/night for Fridays and Saturdays. We do not list cabins in our current accommodations lineup.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/lodge/accommodations",
+    "status": "done",
+    "secs": 40.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "can i have my wedding there",
+    "answer": "I don't have that information. For details about hosting a wedding at Fraser River Lodge, including availability and booking procedures, please contact the lodge directly through their official website or phone number. The context provided here focuses on general advice for choosing a wedding venue and does not confirm or deny whether Fraser River Lodge is available for weddings.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/weddings/wedding-faq",
+    "status": "done",
+    "secs": 132.9,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "how many people can the venue hold",
+    "answer": "The context does not specify exact capacity numbers for the venue. However, it emphasizes considering flexibility and whether the space works well for a range of group sizes. For precise details about how many guests can be accommodated, I recommend contacting the venue directly.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/10-questions-to-ask-before-booking-a-wedding-venue-in-bc",
+    "status": "done",
+    "secs": 32.3,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "is there a hot tub",
+    "answer": "Yes, most of our units have their own hot tub. Each unit sleeps 2 to 8 guests, and while not every room includes one, the majority are equipped with a private hot tub for guest use.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/lodge/accommodations",
+    "status": "done",
+    "secs": 32.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you have a resturant on site",
+    "answer": "We don\u2019t mention an on-site restaurant in our context, but we do highlight accommodations for guests and the couple, such as lodging options to simplify travel logistics. For specific dining details, you\u2019d need to confirm directly with the venue.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/10-questions-to-ask-before-booking-a-wedding-venue-in-bc",
+    "status": "done",
+    "secs": 32.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "whats your cancelation policy",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fraserriverlodge.com/weddings/wedding-faq",
+    "status": "done",
+    "secs": 100.8,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "are you open in the winter",
+    "answer": "We are open in the winter, particularly during the holiday season, as evidenced by our Christmas party offerings and seasonal d\u00e9cor. Our venue is available for corporate events and smaller gatherings throughout the winter months. For specific hours or availability beyond holiday periods, please contact us directly.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/corporate/christmas-parties",
+    "status": "done",
+    "secs": 32.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you have somewhere to moor my boat",
+    "answer": "We do not mention specific boat mooring facilities at Cheam Campground in our materials. However, the site includes a **boat launch** for accessing the Fraser River. For mooring arrangements, we recommend contacting our team directly, as seasonal closures (this site closes October 12, 2026) and detailed boating policies are best confirmed with us.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/10-questions-to-ask-before-booking-a-wedding-venue-in-bc",
+    "status": "done",
+    "secs": 72.6,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "how far are you from vancouver",
+    "answer": "We are located about 1 hour and 15 minutes from Vancouver. The nearest town is only 10 minutes away, so you\u2019ll have access to amenities while still enjoying a peaceful escape from the city.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/3-reasons-to-stay-at-the-lodge",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you offer sturgeon fishing trips",
+    "answer": "Yes, we offer guided Fraser River sturgeon fishing day trips. These trips include a full day on the water with experienced guides, premium equipment, and a private catch-and-release charter targeting legendary white sturgeon. Whether you're a first-time angler or seasoned fisherman, we tailor the experience to your needs.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/fishing/fishing-packages",
+    "status": "done",
+    "secs": 24.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "is there a spa",
+    "answer": "We don\u2019t mention spa services in the context provided, but our accommodations are designed to enhance your stay by allowing guests to remain on-site, fostering a more relaxed and connected experience. For specific details about spa offerings, you\u2019d need to inquire directly with the venue.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/post/10-questions-to-ask-before-booking-a-wedding-venue-in-bc",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "can kids stay there",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fraserriverlodge.com/post/2025-salmon-sturgeon-adventures",
+    "status": "done",
+    "secs": 185.4,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "do you have ev charging",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://fraserriverlodge.com/weddings/wedding-faq",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "what should i bring for a fishing trip",
+    "answer": "For your fishing trip, you\u2019re welcome to bring your own favorite rod, reel, and hand-tied flies if you prefer\u2014though we supply all necessary gear during your stay. No other specific items are mentioned in our offerings, so focus on what you\u2019re comfortable with for your trip.",
+    "grounded": true,
+    "source": "https://fraserriverlodge.com/fishing/fishing-packages",
+    "status": "done",
+    "secs": 28.2,
+    "site": "https://www.fraserriverlodge.com/"
+  },
+  {
+    "question": "what time do you close",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/about",
+    "status": "done",
+    "secs": 124.4,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "were are you located",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/copy-of-about",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "is everything halal",
+    "answer": "We use halal meat, which is healthier and stays fresh longer due to the absence of blood. However, we do not explicitly confirm that all dishes or ingredients are halal. For specific details about other ingredients or dishes, please consult our staff directly.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/about",
+    "status": "done",
+    "secs": 24.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you do catering for weddings",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "can i make a reservation for friday",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/catering",
+    "status": "done",
+    "secs": 132.5,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you have a lunch special",
+    "answer": "We don\u2019t publish a lunch special, but our lineup includes platters designed for sharing, such as the **King Special Platter 8** and **Grand Mix Platter 8**, both priced at **$195.95** and serving 8\u201310 people. These include roasted lamb, kabobs, rice, and dips, with gluten-free and spice-level options. For drinks, sodas like Coke, Pepsi, and 7UP are available at **$2.95** per 355 mL can. We don\u2019t specify meal times or lunch-hour exclusives in the context provided.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "whats on the menu besides kabobs",
+    "answer": "We have several menu items beyond kabobs, including:\n\n### **Slow-Cooked Favourites**  \n- **Roast Chicken Leg** \u2013 CA$24.95  \n  Tender, slow-roasted chicken leg with basmati rice, gravy, and house salad.  \n\n- **Roast Lamb Shank** \u2013 CA$28.95  \n  Gluten-friendly lamb shank in house-made sauce, served with vegetable rice (saffron basmati, dill, lima beans) and house salad.  \n\n- **Roast Chicken Leg Plus** \u2013 CA$28.95  \n  Roast chicken leg paired with a koobideh beef kebab, basmati rice, gravy, and house salad.  \n\n- **Roast Lamb Shank Plus** \u2013 CA$28.95  \n  Roast lamb shank paired with a koobideh beef kebab, vegetable rice, house salad, and lamb gravy.  \n\nOther menu sections include **Takeout Meals**, **Subs & Wraps**, **Family Platters**, **Drinks & Desserts**, **Starters & Dips**, **Salads**, **Sides & Extras**, **Kids\u2019 Meals**, and **Party Platters**. Specific items in these sections are not detailed here, but our full menu is available online.  \n\nLet me know if you\u2019d like help selecting from these categories!",
+    "grounded": true,
+    "source": "https://kingkabob.ca/online-ordering-1",
+    "status": "done",
+    "secs": 40.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you deliver or is it pickup only",
+    "answer": "We currently offer pickup only. Our pickup address is 32435 South Fraser Way, Abbotsford BC V2T 1X4, and today\u2019s pickup window is from 12:00 p.m. onward. We don\u2019t list delivery options on this page.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/about",
+    "status": "done",
+    "secs": 52.2,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "got any vegetarian dishes",
+    "answer": "Yes, we have a vegetarian option on our menu today:\n\n**Veggie Kebab**  \n- Grilled skewer of seasoned mixed vegetables (bell peppers, mushrooms, zucchini, onions)  \n- Served with vegetable rice (saffron basmati, dill, lima beans), house salad, grilled tomatoes, and garlic yogurt  \n- Price: $23.95  \n- Dietary notes: Gluten-free, vegetarian  \n\nOther items on the menu include meat (lamb, beef, chicken, sirloin), so they are not vegetarian. Let me know if you'd like further details!",
+    "grounded": true,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "how much is the mixed grill",
+    "answer": "We don't have a menu item explicitly titled \"mixed grill\" listed in our current offerings. However, our **Queen Kebab** (CA$24.95) is a combination of marinated top sirloin and boneless chicken breast, served with basmati rice, house salad, grilled tomato, and hummus. Other kebab options start at CA$23.95. Let me know if you'd like details about any specific item!",
+    "grounded": true,
+    "source": "https://kingkabob.ca/online-ordering-1",
+    "status": "done",
+    "secs": 28.3,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you sell gift cards",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/gift-card",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "is there parking",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/delivery",
+    "status": "done",
+    "secs": 4.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "can i order online",
+    "answer": "We don't have an online ordering system listed on our catering page. To place an order, please call us directly as instructed on our website.",
+    "grounded": true,
+    "source": "https://kingkabob.ca",
+    "status": "done",
+    "secs": 68.2,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do yous do family platters",
+    "answer": "Yes, we offer family platters designed for sharing. Our current options include:  \n\n- **King Combo 2** (Serves 2\u20133): Two skewers of premium koobideh kebab, one skewer of marinated boneless chicken kebab, one skewer of shish steak kebab, with grilled tomatoes, saffron basmati rice, and dips. **$54.95**.  \n- **Grand Mix Platter 2** (Serves 2\u20133): Two skewers of koobideh kebab, one skewer of chicken kebab, one and a half roasted chicken legs, with grilled tomatoes, saffron basmati rice, and dips. **$54.95**.  \n- **King Special Platter 2** (Serves 2\u20133): Details not fully listed in the context, but likely includes similar kebab and rice components.  \n\nAll platters are gluten-free and available in regular, medium spicy, or hot and spicy flavors. Prices are listed as above, with no mention of day-specific discounts or restrictions.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 36.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "any gluten free options",
+    "answer": "We have several gluten-free options available:  \n\n- **Ti Rice Platter** ($23.95): Includes ti rice, house salad, grilled tomato, and garlic dip.  \n- **Veggie Kebab** ($23.95): Grilled mixed vegetables on a skewer, served with vegetable rice, house salad, grilled tomato, and garlic yogurt.  \n- **Queen Kebab** ($24.95): Combination of marinated top sirloin and boneless chicken breast, served with basmati rice, house salad, grilled tomato, and hummus.  \n- **Shish Steak Kebab** ($24.95): One skewer of AAA top sirloin, served with basmati rice, house salad, grilled tomato, and hummus.  \n- **Royal Mix \u2014 Chicken & Koobideh** ($28.95): One skewer of chicken breast and one skewer of ground beef, served with basmati rice, house salad, grilled tomato, and hummus.  \n\nAll these items are labeled gluten-free. Additional gluten-free sides include lamb gravy, garlic yogurt, and hummus.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 36.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "whats the difference between ur kabobs",
+    "answer": "Our kabobs stand out due to our use of **halal, hormone- and steroid-free meats** that are **healthier, fresher, and more flavorful** compared to regular meats. We prioritize **gluten-free, low-fat cooking** with no fried meats or hot spices, making our dishes kid-friendly. Our recipes blend **fresh, quality ingredients** with Persian and Middle Eastern spices like saffron, dried limes, and cinnamon, all while avoiding artificial additives. The halal meat\u2019s natural freshness and absence of blood also contribute to longer shelf life and bacterial resistance.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/about",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you have baklava or desserts",
+    "answer": "We have baklava available for $4.95, and a mini cake for $1.95. These are the dessert options listed on our menu. Prices are as shown, and no other desserts are specifically mentioned in the context provided.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/menus-1",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "can i rent the place for a private party",
+    "answer": "I don't have that information. Our online ordering page only lists food packages for parties (e.g., King Party 20/30 with skewers, rice, and dips), but doesn't mention venue rental or private event hosting arrangements. For event space inquiries, you'd need to contact us directly through our main website or phone number.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/catering",
+    "status": "done",
+    "secs": 36.1,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "are you open mondays",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://kingkabob.ca/about",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "do you have a kids menu",
+    "answer": "Yes, we have a Kids\u2019 Meals section on our menu. While specific items aren\u2019t detailed in the context provided, this category is explicitly listed as part of our offerings. For full details on children\u2019s options, you may want to check our menu directly or contact us.",
+    "grounded": true,
+    "source": "https://kingkabob.ca/online-ordering-1",
+    "status": "done",
+    "secs": 12.2,
+    "site": "https://www.kingkabob.ca/"
+  },
+  {
+    "question": "when r u open",
+    "answer": "We\u2019re open Monday \u2013 Sunday! Unfortunately, we don\u2019t list specific hours on this page, but you\u2019re welcome to visit any day of the week. For exact times, you may want to check directly with your local Old Yale location.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "where is the brewery exactly",
+    "answer": "We\u2019re located at 7201 49th Street, Beaumont, AB T4X3G2. You can reach us by phone at (780) 929-4695 if you need directions or have questions about our location.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/beaumont",
+    "status": "done",
+    "secs": 24.1,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you have a taproom or do you just sell beer",
+    "answer": "We have Craft Brewery + Kitchens where you can enjoy beer on-site, and we also sell beer to-go in 4-packs, 6-packs, 12-packs, and growler fills. For specific details about our locations or taproom experiences, you can reach out directly to our team at the numbers provided.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "can i get a tour of the brewery",
+    "answer": "The context doesn\u2019t specify whether brewery tours are available at our locations. We recommend contacting the Abbotsford or Chilliwack breweries directly for details about tours, as this information isn\u2019t included in the provided text.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/holiday-parties",
+    "status": "done",
+    "secs": 92.5,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "whats ur most popular beer",
+    "answer": "I don't have that information. Our context only mentions distribution locations (Private Liquor Stores, BC Liquor Stores, restaurants & bars in Fraser Valley BC and Beaumont/Edmonton AB) - it doesn't list specific beers or their popularity rankings. For details about our most popular brews, I recommend visiting our website directly or contacting us through our official channels.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/find-our-beer",
+    "status": "done",
+    "secs": 40.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you serve food at the taproom",
+    "answer": "We don\u2019t mention food service at the taproom in the context provided. However, we do note that at each of our **Craft Brewery + Kitchens** locations, we sell gift cards and branded merchandise (hats, t-shirts, etc.). For specifics about food offerings, we recommend reaching out directly to us via the contact details listed.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 32.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "is there a patio",
+    "answer": "Yes, we have patios where guests can enjoy their time outdoors. Our patios are pet-friendly, so you and your furry friends can join the fun while sipping brews and enjoying the atmosphere. No additional details about the patio\u2019s size or features are provided in our FAQ, but we welcome you to experience it for yourself!",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 28.1,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "can dogs come in",
+    "answer": "We don't have that information in the context provided. For details about pet policies, we recommend checking our website or contacting us directly at 404- 44550 South Sumas Road for the most accurate guidance.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/blog/chilliwack-were-back",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you sell merch like hats and stuff",
+    "answer": "Yes, we sell branded merchandise at our Craft Brewery + Kitchens locations, including hats, t-shirts, dog bandanas, cooler sleeves, and more. You can find these items in person at our locations.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "can i order beer online",
+    "answer": "We don\u2019t offer online ordering for beer at this time. However, we do sell beer to-go at our restaurants, including our Four Season beers and limited releases in 4-packs, 6-packs, 12-packs, and growler fills. For keg orders, you can use our [keg order form](https://oldyalebrewing.com/keg-order-form).",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 44.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you deliver",
+    "answer": "I'm sorry \u2014 I couldn't find that on our website. Please give us a call and our team will be happy to help.",
+    "grounded": false,
+    "source": "https://oldyalebrewing.com/blog/thanksgiving-at-old-yale-brewing",
+    "status": "done",
+    "secs": 4.0,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "whats the alcohol percent of your ipa",
+    "answer": "Our Simcoe Mini Bright IPA has an alcohol content of 4.0% ABV. You can find it at our locations in Chilliwack, Abbotsford, Beaumont, and through private liquor stores. Let me know if you'd like help checking availability at a specific store!",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/blog/simcoe-mini-bright-ipa",
+    "status": "done",
+    "secs": 32.3,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do yous have seasonal or limited beers",
+    "answer": "We don\u2019t specifically mention seasonal or limited-edition beers in the context provided, but our Chilliwack location features **16 beers on tap** as part of our regular lineup. For seasonal or limited offerings, you might want to check our **weekly specials** section (though no specific seasonal beers are listed there) or inquire directly with us during your visit.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 76.4,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "is there parking at the brewery",
+    "answer": "We don\u2019t specify parking details for our Abbotsford or Chilliwack locations in the provided context. For the most accurate information about parking availability, we recommend checking our official website or contacting the specific brewery location directly.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/our-breweries",
+    "status": "done",
+    "secs": 64.4,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "are kids allowed in",
+    "answer": "Kids are more than welcome at Old Yale, as long as they\u2019re accompanied by a parent or guardian. We provide high chairs, coloring fun, board games, and a kid-approved menu from our Campfire Kitchen. Sodas and juices are also available for younger guests to enjoy while you savor your brew. It\u2019s designed to be fun for the whole family!",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 44.3,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you do trivia nights or events",
+    "answer": "Yes, we host Trivia Night every Monday at 5:00 PM for registration and 6:00 PM for trivia at our Abbotsford & Beaumont location. There is also an event listed for Tuesday, November 10, at our Chilliwack location, but no specific details about that event are provided in the context.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/calendar",
+    "status": "done",
+    "secs": 48.3,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "can i book the space for a private event",
+    "answer": "Yes, you can book the space for a private event! We offer options to rent part of our restaurant, the full space, or our private rooms in Beaumont. To discuss details, contact Abby & Chwk at **604-392-2011**, Beaumont at **780-929-4695**, or email **info@oldyalebrewing.com**. Our team will work with you to arrange your event.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 36.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you fill growlers",
+    "answer": "Yes, we fill growlers! Our Four Season beers and limited releases are available for purchase in 4-packs, 6-packs, 12-packs, and growler fills. For more details or to place an order, you can contact us directly at **604-392-2011** (Liwack) or **780-929-4695** (Beaumont).",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/keg-order-form",
+    "status": "done",
+    "secs": 48.6,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "how do i apply for a job there",
+    "answer": "To apply for a job at Old Yale Brewing, you can either:  \n1. **Apply ahead of time** via our online portal here: [https://oldyalebrewingcareers.applytojobs.ca/hospitality/49852](https://oldyalebrewingcareers.applytojobs.ca/hospitality/49852).  \n2. **Attend our Hiring Fair** on **Thursday, August 20** (11am\u20137pm) or **Saturday, August 22** (10am\u20136pm) and bring your r\u00e9sum\u00e9. No appointment is necessary.  \n\nWe\u2019re currently hiring for positions including Servers, Hosts, Expos, Bartenders, Line Cooks, Prep Cooks, and Shift Leads. Visit the Hiring Fair to meet the team and learn more about our available roles.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/calendar",
+    "status": "done",
+    "secs": 32.1,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "do you have gift cards",
+    "answer": "Yes, you can purchase gift cards online through our website. For assistance or more details, you may contact us via email at info@oldyalebrewing.com or call 604.392.2011 (BC) and 780-929-4695 (AB).",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 32.2,
+    "site": "https://www.oldyalebrewing.com/"
+  },
+  {
+    "question": "where can i buy your beer in stores",
+    "answer": "We don\u2019t list specific retail stores where our beer is available, but you can purchase our beer to-go at our Craft Brewery + Kitchens locations (Four Season beers and limited releases in 4-packs, 6-packs, 12-packs, and growler fills). For keg orders, [fill out our keg order form](https://oldyalebrewing.com/keg-order-form) directly. For retail store locations, we recommend contacting us at **info@oldyalebrewing.com** or our main line (**604-392-2011**) for the most up-to-date information.",
+    "grounded": true,
+    "source": "https://oldyalebrewing.com/faq",
+    "status": "done",
+    "secs": 28.1,
+    "site": "https://www.oldyalebrewing.com/"
+  }
+]

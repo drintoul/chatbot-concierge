@@ -347,7 +347,7 @@ const fmt = (d) =>
    d.count != null ? d.count + " chunks" : null, d.top_k != null ? "top " + d.top_k : null,
    d.dropped != null ? "dropped " + d.dropped + " junk" : null,
    d.best != null ? "best " + d.best : null, d.model || null,
-   d.qdrant ? "→ qdrant " + d.qdrant : null,
+   d.qdrant ? "→ qdrant " + d.qdrant : null, d.fields ? d.fields + " fields" : null,
    d.attempt != null ? "attempt " + d.attempt : null,
    d.grounded != null ? (d.grounded ? "grounded" : "not grounded") : null,
    d.missing?.length ? "missing: " + d.missing.join(" ") : null,
@@ -494,7 +494,7 @@ async function loadSites() {
         ? `<span class="m">${[s.email, s.phone].filter(Boolean).join(" · ")}</span>`
         : "") +
       `<span class="m">${new Date(s.indexed_at*1000).toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"})}</span></div>` +
-      `<div style="display:flex;gap:10px;align-items:center;flex-shrink:0"><button class="cta ri">reindex</button><button class="del" title="Delete corpus">✕</button><span class="tw">tree ▾</span></div>`;
+      `<div style="display:flex;gap:10px;align-items:center;flex-shrink:0"><button class="cta ri">reindex</button><button class="cta ri" onclick="event.stopPropagation();renameSite('${encodeURIComponent(s.url)}')">rename</button><button class="del" title="Delete corpus">✕</button><span class="tw">tree ▾</span></div>`;
     const reBtn = row.querySelector(".ri");
     reBtn.onclick = async (e) => {
       e.stopPropagation();
@@ -587,6 +587,19 @@ function renderPages() {
   }
 }
 $("e-site").onchange = renderPages;
+
+// Sites Indexed row: rename the corpus label (title-only; token unchanged).
+async function renameSite(enc) {
+  const url = decodeURIComponent(enc);
+  const cur = (siteList.find(s => s.url === url) || {}).title || "";
+  const t = prompt("Corpus name:", cur || url);
+  if (t == null || !t.trim()) return;
+  await fetch("/sites/rename", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url, title: t.trim() }),
+  });
+  loadSites();
+}
 loadSites();
 
 // Timezone dropdown — canonical US/CA zones from the backend's tzdata.
@@ -667,7 +680,9 @@ $("f-known").addEventListener("submit", async (e) => {
     st.textContent = "";
     const meta = document.createElement("div");
     meta.className = "hint";
-    meta.textContent = `${d.pages.length} page(s) read · ${(d.elapsed_ms / 1000).toFixed(1)}s — ${d.pages.join(", ")}`;
+    meta.textContent = `${d.pages.length} page(s) read · ${(d.elapsed_ms / 1000).toFixed(1)}s` +
+      (d.topics && d.topics.length ? ` · topics: ${d.topics.join(", ")}` : "") +
+      ` — ${d.pages.join(", ")}`;
     out.appendChild(meta);
     // Small models fill gaps with "not specified" — treat those as empty.
     const EMPTY = v => v == null || (typeof v === "string" &&

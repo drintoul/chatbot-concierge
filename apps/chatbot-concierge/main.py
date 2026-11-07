@@ -54,7 +54,7 @@ TZ = ZoneInfo(os.environ.get("TZ", "UTC"))
 TOP_K = 6
 MIN_SIMILARITY = 0.15
 EVIDENCE_BEST = 0.5   # best-score floor for the no-evidence fast path
-ANSWER_TRIES = 3      # single-chunk answer attempts before genuine refusal
+ANSWER_TRIES = 6      # single-chunk answer attempts — covers all of TOP_K
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 http = httpx.AsyncClient(timeout=httpx.Timeout(120.0))
@@ -218,6 +218,13 @@ _INTENTS: list[tuple[re.Pattern, re.Pattern, float]] = [
         re.compile(r"\b(where|location|address|directions|located|find|visit|map)\b", re.I),
         re.compile(r"\b\d{2,5}\s+[a-z0-9 .]+?\b(rd|st|ave|blvd|dr|ln|lane|way|hwy|highway|road|street|avenue|drive)\b\.?", re.I),
         0.25,
+    ),
+    (
+        # Menu questions → chunks that actually read like a menu (beer
+        # specs, dish items, prices) rather than about-us prose.
+        re.compile(r"\b(beers?|ales?|ipa|lager|stout|porter|pilsner|drinks?|cocktails?|wine|menu|foods?|meals?|dish|dishes|pizzas?|kabobs?|kebabs?|entrees?|appetizers?|desserts?|popular|favou?rite|recommend|best)\b", re.I),
+        re.compile(r"\b(abv|ibu|\d+(\.\d+)?\s?%\s?(alc|abv)|on tap|pints?|flight|growler|marinated|toppings?|skewers?|served with|with rice|garlic|pepperoni)\b", re.I),
+        0.15,
     ),
 ]
 
@@ -417,9 +424,14 @@ SYSTEM_PROMPT = (
     "question, list each one plainly with its exact qualifiers as "
     "written (amounts, units, taxes, minimums, day or date "
     "restrictions, eligibility), and note plainly what isn't covered. "
-    "Only if nothing at all is related, say exactly: \"I don't have "
-    "that information.\" Never invent facts, dates, prices, or "
-    "availability."
+    "When the question isn't literally answered — a superlative like "
+    "\"most popular\" or \"best\", a recommendation, or a specific item — "
+    "give the closest related offerings the context does list and note "
+    "the missing part (\"we don't publish a most-popular list, but our "
+    "lineup includes…\") — never start that reply with \"I don't have "
+    "that information.\" Save \"I don't have that information.\" as the "
+    "entire reply for when nothing at all relates. Never invent "
+    "facts, dates, prices, or availability."
 )
 
 # The model's literal refusal is an internal sentinel — the sequential
@@ -443,10 +455,16 @@ _SOFT_REFUSAL = re.compile(
 
 def _is_refusal(text: str) -> bool:
     # Refusals announce themselves upfront — only scan the opening so a
-    # caveat mid-answer ("…but we don't have details on pricing") can't
-    # sink an otherwise substantive response.
+    # caveat mid-answer can't sink a substantive response. A soft apology
+    # only counts when it's the whole reply: a long answer that *also*
+    # apologizes ("sorry, we don't publish X, but our lineup includes…")
+    # still carries real content.
     head = text[:240].lower()
-    return head.startswith(REFUSAL) or bool(_SOFT_REFUSAL.search(head))
+    if head.startswith(REFUSAL):
+        # The sentinel only counts as a refusal when it IS the reply —
+        # the model also uses it as preamble to a closest-info answer.
+        return len(text) < 200
+    return len(text) < 200 and bool(_SOFT_REFUSAL.search(head))
 
 
 def _site_tz(state: ChatbotConciergeState) -> ZoneInfo:
