@@ -511,7 +511,10 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
         }
     if not ranked or try_idx >= min(len(ranked), ANSWER_TRIES):
         return {"candidate": None, "steps": [step("answer", "ok", tried=try_idx)]}
-    r = ranked[try_idx]
+    # Batched attempts: feed the next 3 ranked chunks in ONE generation —
+    # a single call usually lands the right chunk without burning retries.
+    srcs = ranked[try_idx:try_idx + 3]
+    joined = "\n\n".join(f"[{s['source']}]\n{s['text']}" for s in srcs)
     try:
         res = await http.post(
             f"{OLLAMA}/v1/chat/completions",
@@ -525,7 +528,7 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
                     # real weekday — without it the model guesses one and the
                     # verify pass can't catch the invented premise. Per-site
                     # tz falls back to the service-level TZ.
-                    {"role": "user", "content": f"TODAY: {datetime.now(_site_tz(state)):%A, %B %-d, %Y}\n\nCONTEXT:\n[{r['source']}]\n{r['text']}\n\nQUESTION: {state['question']}"},
+                    {"role": "user", "content": f"TODAY: {datetime.now(_site_tz(state)):%A, %B %-d, %Y}\n\nCONTEXT:\n{joined}\n\nQUESTION: {state['question']}"},
                 ],
             },
         )
@@ -535,10 +538,10 @@ async def answer(state: ChatbotConciergeState) -> ChatbotConciergeState:
         return fail(state, "answer", e)
     return {
         "candidate": text,
-        "cand_text": r["text"],
-        "cand_source": r["source"],
-        "try_idx": try_idx + 1,
-        "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=r["index"], attempt=try_idx + 1)],
+        "cand_text": joined,
+        "cand_source": srcs[0]["source"],
+        "try_idx": try_idx + len(srcs),
+        "steps": [step("answer", "ok", ms=round((time.time() - t0) * 1000), model=CHAT_MODEL, chunk=srcs[0]["index"], chunks=len(srcs), attempt=try_idx + 1)],
     }
 
 
